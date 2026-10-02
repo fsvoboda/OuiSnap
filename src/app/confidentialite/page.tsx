@@ -90,7 +90,7 @@ export default function Confidentialite() {
         <ul>
           <li>
             Photos, prénoms et adresses e-mail liés à un événement : jusqu&apos;à la suppression de
-            l&apos;album, qui intervient au plus tard douze mois après sa date de clôture.
+            l&apos;album, qui intervient au plus tard six mois après sa date de clôture.
           </li>
           <li>Demandes reçues par le formulaire : trois ans après le dernier échange.</li>
           <li>
