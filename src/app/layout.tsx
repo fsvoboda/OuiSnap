@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     title: "OuiSnap, l'appli de vos invités",
     description: DESCRIPTION,
     url: "/",
-    images: [{ url: "/media/apercu-connecte.jpg", width: 780, height: 1560 }],
+    images: [{ url: "/media/ouisnap-teaser-poster.jpg", width: 720, height: 1280 }],
   },
 };
 

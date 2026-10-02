@@ -4,10 +4,11 @@ import { CountUp } from "@/components/count-up";
 import { Logo } from "@/components/logo";
 import { RequestForm } from "@/components/request-form";
 import { Reveal } from "@/components/reveal";
+import { TeaserVideo } from "@/components/teaser-video";
 
 const PUOE = "https://www.pourunouieternel.fr";
 
-// Exemple de journée, repris du teaser.
+// Exemple de journée, repris de la vidéo de présentation.
 const moments = [
   { heure: "11:00", nom: "La cérémonie", photos: 52, fond: "bg-sapin-700", Icone: Sun },
   { heure: "17:30", nom: "Le vin d'honneur", photos: 147, fond: "bg-ambre", Icone: SunHorizon },
@@ -100,7 +101,7 @@ export default function Home() {
         <section className="grid items-center gap-12 pb-20 pt-8 md:grid-cols-[1.15fr_0.85fr] md:pb-28 md:pt-12">
           <Reveal className="flex flex-col items-start gap-7">
             <p className="flex flex-wrap items-center gap-3">
-              <span className="libelle rounded-full bg-or px-4 py-1.5 text-sapin-950">Nouveau</span>
+              <span className="libelle rounded-full bg-or px-4 py-1.5 text-sapin-950">Nouveau service</span>
               <span className="libelle text-or-clair">L&apos;appli photo de vos invités</span>
             </p>
             <h1 className="pb-1 font-serif text-5xl leading-[1.1] md:text-6xl lg:text-7xl">
@@ -118,11 +119,7 @@ export default function Home() {
             </a>
           </Reveal>
           <Reveal delay={0.15}>
-            <Ecran
-              priority
-              src="/media/apercu-connecte.jpg"
-              alt="Écran d'accueil de l'application : « Connecté ! », album des mariés Julie et Enzo, saisie du prénom"
-            />
+            <TeaserVideo />
           </Reveal>
         </section>
 

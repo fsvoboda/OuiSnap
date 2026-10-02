@@ -77,7 +77,7 @@ Les accès FTP et MySQL et le mot de passe de l'administration sont dans `.env.d
 
 ## Page vitrine
 
-Elle présente OuiSnap comme le complément des reportages de PourUnOuiEternel (pourunouieternel.fr) et se termine par un formulaire de demande : chaque demande est enregistrée dans la table `requests` et envoyée par e-mail à l'adresse `MAIL_FROM`. Ses illustrations sont de vraies captures de l'application (`public/media/apercu-*.jpg`).
+Elle présente OuiSnap comme le complément des reportages de PourUnOuiEternel (pourunouieternel.fr) et se termine par un formulaire de demande : chaque demande est enregistrée dans la table `requests` et envoyée par e-mail à l'adresse `MAIL_FROM`. Elle s'ouvre sur la vidéo de présentation (`public/media/ouisnap-teaser.mp4`, copie du fichier de `video/`) ; ses autres illustrations sont de vraies captures de l'application (`public/media/apercu-*.jpg`).
 
 ## Créer un événement
 
