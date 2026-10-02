@@ -1,6 +1,7 @@
 "use client";
 
 import { Check } from "@phosphor-icons/react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/logo";
 import { api, ApiError, type EventInfo } from "@/lib/api";
@@ -334,6 +335,17 @@ export function GuestApp() {
           >
             {joining ? "Un instant…" : "Commencer à photographier"}
           </button>
+          <p className="mt-2 text-center text-sm text-sapin-700">
+            En continuant, vous acceptez les{" "}
+            <Link href="/mentions-legales/" target="_blank" className="underline underline-offset-4">
+              règles d&apos;utilisation
+            </Link>{" "}
+            et la{" "}
+            <Link href="/confidentialite/" target="_blank" className="underline underline-offset-4">
+              politique de confidentialité
+            </Link>
+            .
+          </p>
           {max !== null && (
             <p className="mt-2 text-center text-sm text-sapin-700">
               Vous pouvez envoyer jusqu&apos;à {max} photos

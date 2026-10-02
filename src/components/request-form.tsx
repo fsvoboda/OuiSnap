@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle } from "@phosphor-icons/react";
+import Link from "next/link";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { KINDS, type Kind } from "@/lib/kinds";
@@ -115,7 +116,10 @@ export function RequestForm() {
           {pending ? "Envoi…" : "Envoyer ma demande"}
         </button>
         <p className="text-sm text-brume">
-          Vos coordonnées servent uniquement à répondre à votre demande.
+          Vos coordonnées servent uniquement à répondre à votre demande.{" "}
+          <Link href="/confidentialite/" className="underline underline-offset-4 hover:text-creme">
+            Confidentialité
+          </Link>
         </p>
       </div>
     </form>

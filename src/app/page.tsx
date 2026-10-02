@@ -1,5 +1,6 @@
 import { ArrowUpRight, Heart, MoonStars, Sun, SunHorizon } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
+import Link from "next/link";
 import { CountUp } from "@/components/count-up";
 import { Logo } from "@/components/logo";
 import { RequestForm } from "@/components/request-form";
@@ -281,7 +282,15 @@ export default function Home() {
             PourUnOuiEternel
           </a>
         </p>
-        <p>© 2026 OuiSnap</p>
+        <p className="flex flex-wrap gap-x-5 gap-y-1">
+          <Link href="/mentions-legales/" className="hover:text-creme">
+            Mentions légales
+          </Link>
+          <Link href="/confidentialite/" className="hover:text-creme">
+            Confidentialité
+          </Link>
+          <span>© 2026 OuiSnap</span>
+        </p>
       </footer>
     </div>
   );
