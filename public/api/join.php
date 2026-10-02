@@ -10,7 +10,7 @@ require_post();
 $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
 $event = null;
 if (preg_match('/^[A-Z0-9]{4,16}$/', $code)) {
-    $stmt = db()->prepare('SELECT id, code, title, kind, max_photos_per_guest, max_guests, wedding_date, starts_at, closes_at, reveal_at
+    $stmt = db()->prepare('SELECT id, code, title, kind, organizer_name, max_photos_per_guest, max_guests, wedding_date, starts_at, closes_at, reveal_at
          FROM events WHERE code = ?');
     $stmt->execute([$code]);
     $event = $stmt->fetch();

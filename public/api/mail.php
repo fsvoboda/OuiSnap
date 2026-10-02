@@ -67,6 +67,17 @@ function album_link(array $event): string
     return site_url() . '/album/?k=' . $event['album_key'];
 }
 
+// « de Julie et Enzo », « d'Isabelle »… ou rien si le nom des organisateurs est inconnu.
+function organizer_possessive(array $event): string
+{
+    $name = trim((string) ($event['organizer_name'] ?? ''));
+    if ($name === '') {
+        return '';
+    }
+    $elision = preg_match('/^[aeiouyhàâäéèêëîïôöùûü]/iu', $name) === 1;
+    return $elision ? " d'$name" : " de $name";
+}
+
 function organizer_greeting(array $event): ?string
 {
     return empty($event['organizer_name']) ? null : "Bonjour {$event['organizer_name']},";
@@ -137,7 +148,8 @@ function welcome_mail(array $event, string $name, string $token): array
         'label' => album_label($event),
         'heading' => "Bienvenue, $name !",
         'paragraphs' => [
-            "Vous avez rejoint l'album « {$event['title']} ». Merci de photographier pour lui !",
+            "Vous avez rejoint l'album « {$event['title']} »" . organizer_possessive($event)
+                . ". Merci d'avance de votre contribution à ce souvenir unique.",
             'Vous serez prévenu par e-mail dès que vos photos seront dévoilées ' . hosts_label($event) . '.',
         ],
         'highlight' => $max === null

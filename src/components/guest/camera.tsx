@@ -42,6 +42,8 @@ export function Camera({
   // Zoom relatif (1 = sans zoom). Optique si le téléphone le permet, sinon numérique.
   const [zoom, setZoom] = useState(1);
   const [optical, setOptical] = useState(false);
+  // Proportions de l'image fournie par la caméra : elles changent quand le téléphone pivote.
+  const [aspect, setAspect] = useState(9 / 16);
   const zoomTrack = useRef<{ track: MediaStreamTrack; base: number; max: number } | null>(null);
   const pinchBase = useRef(1);
   const clock = useSyncExternalStore(subscribeClock, readClock, () => "");
@@ -62,6 +64,7 @@ export function Camera({
         const video = videoRef.current!;
         video.srcObject = stream;
         await video.play();
+        if (video.videoWidth && video.videoHeight) setAspect(video.videoWidth / video.videoHeight);
         const track = stream.getVideoTracks()[0];
         const range = (track.getCapabilities?.() as { zoom?: { max: number } } | undefined)?.zoom;
         const base = (track.getSettings() as { zoom?: number }).zoom ?? 1;
@@ -79,11 +82,19 @@ export function Camera({
       if (document.visibilityState === "visible" && (ended || !stream)) start();
     }
 
+    // Passage portrait/paysage : la caméra livre une image aux nouvelles proportions.
+    const video = videoRef.current;
+    function resized() {
+      if (video?.videoWidth && video.videoHeight) setAspect(video.videoWidth / video.videoHeight);
+    }
+
     start();
     document.addEventListener("visibilitychange", resume);
+    video?.addEventListener("resize", resized);
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", resume);
+      video?.removeEventListener("resize", resized);
       stream?.getTracks().forEach((track) => track.stop());
     };
   }, [facing]);
@@ -136,18 +147,28 @@ export function Camera({
   }
 
   return (
-    <div className="fixed inset-0 flex touch-none flex-col bg-sapin-950 text-creme select-none">
-      <div className="relative min-h-0 flex-1 overflow-hidden" {...pinch}>
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          style={{
-            // Miroir pour la caméra avant ; agrandissement à l'écran quand le zoom est numérique.
-            transform: `scale(${(facing === "user" ? -1 : 1) * (optical ? 1 : zoom)}, ${optical ? 1 : zoom})`,
-          }}
-          className={`h-full w-full object-cover ${live ? "" : "invisible"}`}
-        />
+    // En paysage, les commandes passent sur le côté pour laisser toute la hauteur à l'image.
+    <div className="fixed inset-0 flex touch-none flex-col bg-sapin-950 text-creme select-none landscape:flex-row">
+      <div
+        className="relative grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden [container-type:size]"
+        {...pinch}
+      >
+        {/* Cadre aux proportions exactes de la photo : ce qui est affiché est ce qui sera enregistré. */}
+        <div
+          className="overflow-hidden"
+          style={{ aspectRatio: aspect, width: `min(100cqw, calc(100cqh * ${aspect}))` }}
+        >
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            style={{
+              // Miroir pour la caméra avant ; agrandissement à l'écran quand le zoom est numérique.
+              transform: `scale(${(facing === "user" ? -1 : 1) * (optical ? 1 : zoom)}, ${optical ? 1 : zoom})`,
+            }}
+            className={`h-full w-full object-cover ${live ? "" : "invisible"}`}
+          />
+        </div>
 
         {live === false && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-8 text-center">
@@ -206,6 +227,12 @@ export function Camera({
           </button>
         )}
 
+        {status && (
+          <p className="pointer-events-none absolute bottom-16 left-1/2 hidden max-w-[80%] -translate-x-1/2 rounded-full bg-sapin-950/75 px-4 py-1.5 text-center text-sm landscape:block">
+            {status}
+          </p>
+        )}
+
         {/* Éclair blanc à chaque déclenchement : confirme que la photo est prise. */}
         <AnimatePresence>
           {shots > 0 && (
@@ -221,14 +248,14 @@ export function Camera({
         </AnimatePresence>
       </div>
 
-      <div className="flex flex-col items-center gap-3 px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
-        <p role="status" className="min-h-5 text-center text-sm text-brume">
+      <div className="flex flex-col items-center gap-3 px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 landscape:justify-center landscape:gap-4 landscape:px-4 landscape:py-3 landscape:pr-[max(1rem,env(safe-area-inset-right))]">
+        <p role="status" className="min-h-5 text-center text-sm text-brume landscape:hidden">
           {status}
         </p>
-        <div className="grid w-full max-w-sm grid-cols-3 items-center">
+        <div className="grid w-full max-w-sm grid-cols-3 items-center landscape:w-auto landscape:grid-cols-1 landscape:gap-4 landscape:justify-items-center">
           <label
             aria-label="Importer depuis la galerie"
-            className={`grid size-13 cursor-pointer place-items-center justify-self-start rounded-full border border-creme/30 active:scale-95 ${full ? "pointer-events-none opacity-40" : ""}`}
+            className={`grid size-13 cursor-pointer place-items-center justify-self-start landscape:justify-self-center rounded-full border border-creme/30 active:scale-95 ${full ? "pointer-events-none opacity-40" : ""}`}
           >
             <Images size={24} />
             <input
@@ -255,7 +282,7 @@ export function Camera({
             type="button"
             aria-label="Voir mes photos"
             onClick={onOpenPhotos}
-            className="relative grid size-13 place-items-center justify-self-end overflow-hidden rounded-2xl border border-creme/30 bg-sapin-800 active:scale-95"
+            className="relative grid size-13 place-items-center justify-self-end overflow-hidden landscape:justify-self-center rounded-2xl border border-creme/30 bg-sapin-800 active:scale-95"
           >
             {!lastShot && <SquaresFour size={24} />}
             {lastShot && (
@@ -277,7 +304,7 @@ export function Camera({
             </AnimatePresence>
           </button>
         </div>
-        <p className="libelle text-or-clair">{counter}</p>
+        <p className="libelle text-center text-or-clair landscape:max-w-24">{counter}</p>
       </div>
     </div>
   );
