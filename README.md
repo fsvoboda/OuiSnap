@@ -74,6 +74,7 @@ Les accès FTP et MySQL et le mot de passe de l'administration sont dans `.env.d
 - **Administration** : après 5 mots de passe erronés depuis une même adresse en 15 minutes, la connexion est bloquée pendant ce délai.
 - **Référencement** : seule la page vitrine est ouverte aux moteurs de recherche (`robots.txt`).
 - **Tâche planifiée** : pour que les e-mails d'ouverture et de révélation partent même si personne ne visite le site, créer dans l'espace client OVH une tâche horaire sur `ouisnap/api/cron.php`.
+- **Téléchargement ZIP** : l'archive est écrite au fil de l'eau, sans fichier temporaire. Essai du 2026-10-03 sur le serveur : 1 000 photos (651 Mo) téléchargées en 64 secondes. L'hébergement refusant les réponses qui annoncent une très grosse taille, celle-ci n'est annoncée qu'en dessous de 150 Mo. Limite du format : 4 Go par archive.
 - **Engagement de conservation** : la politique de confidentialité annonce la suppression des albums au plus tard six mois après leur clôture. Cette suppression se fait à la main, depuis l'administration.
 - **Sauvegardes** : les photos (`ouisnap-data/`) et la base ne sont sauvegardées que par les instantanés d'OVH.
 
