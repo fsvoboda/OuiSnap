@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "deploy": "bash scripts/deploy.sh"
+    "deploy": "bash scripts/deploy.sh",
+    "local": "bash scripts/local.sh",
+    "migrate": "bash scripts/migrate.sh"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

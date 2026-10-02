@@ -10,6 +10,7 @@
   --color-nuit: #1e2942;
   --color-or: #cba660;
   --color-or-clair: #e2c88f;
+  --color-or-fonce: #7d5f24;
   --color-creme: #f5f0e6;
   --color-brume: #b7c1b7;
   --color-corail: #d9605a;
@@ -51,4 +52,12 @@ body {
   font-weight: 500;
   letter-spacing: 0.24em;
   text-transform: uppercase;
+}
+
+/* Confort tactile pour l'appli invité. */
+button,
+a,
+label {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }

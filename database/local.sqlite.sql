@@ -1,0 +1,31 @@
+-- Équivalent SQLite de 002_app.sql, pour les tests en local (npm run local).
+
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  max_photos_per_guest INTEGER NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS guests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL REFERENCES events (id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL REFERENCES events (id) ON DELETE CASCADE,
+  guest_id INTEGER NOT NULL REFERENCES guests (id) ON DELETE CASCADE,
+  file TEXT NOT NULL UNIQUE,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  bytes INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO events (code, title, max_photos_per_guest)
+VALUES ('DEMO2026', 'Mariage de démonstration', 10);

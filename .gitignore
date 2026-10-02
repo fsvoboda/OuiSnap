@@ -42,3 +42,6 @@ next-env.d.ts
 
 # identifiants MySQL (ne jamais versionner)
 /public/api/config.php
+
+# base et photos de test locales
+/.local/

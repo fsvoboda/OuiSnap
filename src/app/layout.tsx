@@ -32,11 +32,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-[100dvh] font-sans">
         {children}
-        {/* Liseré doré du teaser, fixe au-dessus de la page. */}
-        <div
-          aria-hidden
-          className="pointer-events-none fixed inset-2 z-40 rounded-sm border border-or/35 md:inset-4"
-        />
       </body>
     </html>
   );

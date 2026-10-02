@@ -35,6 +35,11 @@ export default async function Home() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col px-6 md:px-12">
+      {/* Liseré doré du teaser, fixe au-dessus de la page. */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-2 z-40 rounded-sm border border-or/35 md:inset-4"
+      />
       <header className="flex h-18 items-center justify-between">
         <Logo className="text-3xl" />
         <nav className="flex items-center gap-8 text-sm">
