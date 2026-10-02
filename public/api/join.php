@@ -10,7 +10,7 @@ require_post();
 $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
 $event = null;
 if (preg_match('/^[A-Z0-9]{4,16}$/', $code)) {
-    $stmt = db()->prepare('SELECT id, title, max_photos_per_guest FROM events WHERE code = ?');
+    $stmt = db()->prepare('SELECT id, title, max_photos_per_guest, wedding_date, reveal_at FROM events WHERE code = ?');
     $stmt->execute([$code]);
     $event = $stmt->fetch();
 }
@@ -41,6 +41,9 @@ $name = mb_substr(trim(preg_replace('/\s+/u', ' ', $name) ?? ''), 0, 40);
 if ($name === '') {
     reply(200, ['ok' => true, 'token' => null, 'name' => null, 'event' => event_payload($event), 'count' => 0]);
 }
+
+// Album déjà dévoilé : on n'accueille plus de nouvel invité.
+require_open($event);
 
 $token = bin2hex(random_bytes(24));
 db()->prepare('INSERT INTO guests (event_id, token_hash, name) VALUES (?, ?, ?)')

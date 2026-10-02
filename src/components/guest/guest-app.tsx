@@ -43,6 +43,7 @@ export function GuestApp() {
   const [shots, setShots] = useState(0);
   const [joining, setJoining] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [closed, setClosed] = useState(false);
 
   // File d'envoi : les photos partent une à une, et attendent si le réseau tombe.
   const queue = useRef<Blob[]>([]);
@@ -61,6 +62,7 @@ export function GuestApp() {
         if (cancelled) return;
         setCode(scanned);
         setEvent(result.event);
+        setClosed(result.event.closed);
         maxRef.current = result.event.maxPhotos;
         if (result.token) {
           tokenRef.current = result.token;
@@ -103,6 +105,11 @@ export function GuestApp() {
         if (error.code === "limit") {
           queue.current = [];
           if (maxRef.current !== null) setCount(maxRef.current);
+        }
+        // L'album vient d'être dévoilé aux mariés : l'appli passe en lecture seule.
+        if (error.code === "closed") {
+          queue.current = [];
+          setClosed(true);
         }
         setNotice(error.message);
       }
@@ -198,6 +205,19 @@ export function GuestApp() {
         <Logo className="text-4xl" />
         <p role="status" className="libelle animate-pulse text-brume">
           Connexion à l&apos;album
+        </p>
+      </main>
+    );
+  }
+
+  if (closed) {
+    if (token) return <MyPhotos token={token} readOnly onCount={setCount} />;
+    return (
+      <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-sapin-900 px-8 text-center text-creme">
+        <Logo className="text-4xl" />
+        <p className="libelle text-or-clair">{event.title}</p>
+        <p className="max-w-[28ch] font-serif text-2xl italic">
+          L&apos;album a été dévoilé aux mariés. Il n&apos;accepte plus de nouvelles photos.
         </p>
       </main>
     );

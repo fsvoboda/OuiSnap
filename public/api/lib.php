@@ -81,7 +81,11 @@ function photo_path(int $eventId, string $file, bool $thumb = false): string
 function event_payload(array $event): array
 {
     $max = $event['max_photos_per_guest'];
-    return ['title' => $event['title'], 'maxPhotos' => $max === null ? null : (int) $max];
+    return [
+        'title' => $event['title'],
+        'maxPhotos' => $max === null ? null : (int) $max,
+        'closed' => is_revealed($event),
+    ];
 }
 
 function photo_count(int $guestId): int
@@ -102,7 +106,7 @@ function current_guest(): array
     $token = (string) ($_POST['token'] ?? '');
     if (is_token($token)) {
         $stmt = db()->prepare(
-            'SELECT g.id, g.event_id, g.name, e.title, e.max_photos_per_guest
+            'SELECT g.id, g.event_id, g.name, e.title, e.max_photos_per_guest, e.wedding_date, e.reveal_at
              FROM guests g JOIN events e ON e.id = g.event_id
              WHERE g.token_hash = ?'
         );
@@ -127,4 +131,74 @@ function own_photo(array $guest): array
         fail(404, 'photo', 'Photo introuvable.');
     }
     return $photo;
+}
+
+// Révélation de l'album : le lendemain du mariage à 12h00, heure de Paris.
+// events.reveal_at (en UTC), s'il est renseigné, remplace cette règle : utile pour les tests.
+function reveal_at(array $event): ?DateTimeImmutable
+{
+    if (!empty($event['reveal_at'])) {
+        return (new DateTimeImmutable($event['reveal_at'], new DateTimeZone('UTC')))
+            ->setTimezone(new DateTimeZone('Europe/Paris'));
+    }
+    if (empty($event['wedding_date'])) {
+        return null;
+    }
+    $noon = new DateTimeImmutable($event['wedding_date'] . ' 12:00:00', new DateTimeZone('Europe/Paris'));
+    return $noon->modify('+1 day');
+}
+
+function is_revealed(array $event): bool
+{
+    $at = reveal_at($event);
+    return $at !== null && new DateTimeImmutable('now') >= $at;
+}
+
+// Mariage reconnu par la clé du lien privé remis aux mariés.
+function current_album(): array
+{
+    $key = (string) ($_POST['token'] ?? '');
+    if (is_token($key)) {
+        $stmt = db()->prepare('SELECT id, title, wedding_date, reveal_at FROM events WHERE album_token_hash = ?');
+        $stmt->execute([hash('sha256', $key)]);
+        $event = $stmt->fetch();
+        if ($event) {
+            $event['id'] = (int) $event['id'];
+            return $event;
+        }
+    }
+    fail(404, 'album', "Ce lien d'album n'est pas valide.");
+}
+
+// Une fois l'album dévoilé aux mariés, il est figé : plus aucun ajout ni suppression.
+const CLOSED_MESSAGE = "L'album a été dévoilé aux mariés : il n'est plus possible d'ajouter ou de supprimer des photos.";
+
+function require_open(array $event): void
+{
+    if (is_revealed($event)) {
+        fail(403, 'closed', CLOSED_MESSAGE);
+    }
+}
+
+function require_revealed(array $event): void
+{
+    if (!is_revealed($event)) {
+        fail(403, 'locked', "L'album n'est pas encore dévoilé.");
+    }
+}
+
+// Nom de fichier sans accents ni caractères spéciaux.
+function slug(string $text, string $fallback): string
+{
+    $plain = strtr($text, [
+        'à' => 'a', 'â' => 'a', 'ä' => 'a', 'á' => 'a', 'ã' => 'a', 'ç' => 'c',
+        'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e', 'î' => 'i', 'ï' => 'i', 'í' => 'i',
+        'ô' => 'o', 'ö' => 'o', 'ó' => 'o', 'õ' => 'o', 'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ú' => 'u',
+        'ÿ' => 'y', 'ñ' => 'n', 'œ' => 'oe', 'æ' => 'ae',
+        'À' => 'A', 'Â' => 'A', 'Ä' => 'A', 'Ç' => 'C', 'É' => 'E', 'È' => 'E', 'Ê' => 'E', 'Ë' => 'E',
+        'Î' => 'I', 'Ï' => 'I', 'Ô' => 'O', 'Ö' => 'O', 'Ù' => 'U', 'Û' => 'U', 'Ü' => 'U',
+        'Ñ' => 'N', 'Œ' => 'OE', 'Æ' => 'AE',
+    ]);
+    $slug = trim(preg_replace('/[^A-Za-z0-9]+/', '-', $plain) ?? '', '-');
+    return $slug === '' ? $fallback : $slug;
 }

@@ -1,6 +1,7 @@
 // Appels à l'API PHP servie à côté du site statique (public/api).
 
-export type EventInfo = { title: string; maxPhotos: number | null };
+// closed : l'album a été dévoilé aux mariés, il n'accepte plus ni ajout ni suppression.
+export type EventInfo = { title: string; maxPhotos: number | null; closed: boolean };
 
 export class ApiError extends Error {
   constructor(
@@ -46,8 +47,16 @@ export async function api<T>(path: string, fields: Record<string, string | Blob>
   return data as T;
 }
 
-export async function fetchPhoto(token: string, id: number, size: "thumb" | "full"): Promise<Blob> {
-  const response = await post("photo", { token, id: String(id), size });
+// "photo" : photo de l'invité connecté ; "album-photo" : photo de l'album, pour les mariés.
+export type PhotoEndpoint = "photo" | "album-photo";
+
+export async function fetchPhoto(
+  endpoint: PhotoEndpoint,
+  token: string,
+  id: number,
+  size: "thumb" | "full",
+): Promise<Blob> {
+  const response = await post(endpoint, { token, id: String(id), size });
   if (!response.ok) throw new ApiError("photo", "Photo introuvable.", response.status);
   return response.blob();
 }

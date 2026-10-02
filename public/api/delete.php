@@ -5,6 +5,7 @@ require __DIR__ . '/lib.php';
 require_post();
 
 $guest = current_guest();
+require_open($guest);
 $photo = own_photo($guest);
 
 db()->prepare('DELETE FROM photos WHERE id = ?')->execute([(int) $photo['id']]);

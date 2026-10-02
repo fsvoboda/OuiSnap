@@ -1,10 +1,16 @@
--- Équivalent SQLite de 002_app.sql, pour les tests en local (npm run local).
+-- Équivalent SQLite des migrations MySQL, pour les tests en local (npm run local).
+-- Deux mariages de test :
+--   DEMO2026  : mariage aujourd'hui, album pas encore révélé  -> /album/?k=aaaa… (48 fois « a »)
+--   PASSE2026 : mariage passé, album révélé                   -> /album/?k=bbbb… (48 fois « b »)
 
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
+  wedding_date TEXT NULL,
+  reveal_at TEXT NULL,
   max_photos_per_guest INTEGER NULL,
+  album_token_hash TEXT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -27,5 +33,8 @@ CREATE TABLE IF NOT EXISTS photos (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT OR IGNORE INTO events (code, title, max_photos_per_guest)
-VALUES ('DEMO2026', 'Mariage de démonstration', 10);
+INSERT OR IGNORE INTO events (code, title, wedding_date, max_photos_per_guest, album_token_hash)
+VALUES ('DEMO2026', 'Mariage de démonstration', date('now', 'localtime'), 10, '97daac0ee9998dfcad6c9c0970da5ca411c86233a944c25b47566f6a7bc1ddd5');
+
+INSERT OR IGNORE INTO events (code, title, wedding_date, max_photos_per_guest, album_token_hash)
+VALUES ('PASSE2026', 'Julie & Enzo', '2026-06-20', NULL, '720228e4b7b018b5e0c8c5dcc15b8955175fa5e5826c7e80c267f2a2d397d0e0');
