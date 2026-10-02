@@ -1,0 +1,9 @@
+# Seule la page vitrine est destinée aux moteurs de recherche.
+User-agent: *
+Disallow: /api/
+Disallow: /admin/
+Disallow: /album/
+Disallow: /e/
+Disallow: /qr/
+
+Sitemap: https://ouisnap.pourunouieternel.fr/sitemap.xml

@@ -2,17 +2,17 @@
 
 L'appli photo des invités de mariage : ils scannent le QR code posé sur leur table, photographient toute la journée, et les mariés reçoivent tout dans un album.
 
-En ligne : https://ouisnap.pourunouieternel.fr
+Production : https://ouisnap.pourunouieternel.fr (sous-domaine retenu comme adresse de production)
 
 ## Où en est le projet
 
 | Étape | État |
 |---|---|
-| Page vitrine avec liste d'attente | en ligne |
+| Page vitrine (présentation de l'application, formulaire de demande) | en ligne |
 | Parcours invité (QR code, « Connecté ! », appareil photo, envoi) | en ligne |
 | Album des organisateurs (compteurs, révélation, ZIP, coups de cœur) | en ligne |
 | Administration (événements, QR code, PDF des tables, photos) | en ligne |
-| Paiement, mentions légales, domaine dédié | à faire |
+| Paiement, mentions légales | à faire |
 
 ## Règles du produit
 
@@ -43,7 +43,7 @@ L'hébergement est un mutualisé OVH (PHP 8.3 + MySQL, pas de Node.js) :
 | `src/components/guest/` | écrans de l'appli invité |
 | `src/components/album/` | écrans de l'album des organisateurs |
 | `src/components/admin/` | écrans de l'administration (`/admin/`) |
-| `public/api/` | API PHP. Invités : `join`, `upload`, `photos`, `photo`, `delete`. Organisateurs : `album`, `album-photo`, `album-zip`, `album-like`. Administration : `admin-*`. Vitrine : `waitlist` |
+| `public/api/` | API PHP. Invités : `join`, `upload`, `photos`, `photo`, `delete`. Organisateurs : `album`, `album-photo`, `album-zip`, `album-like`. Administration : `admin-*`. Vitrine : `contact` |
 | `database/` | migrations SQL numérotées (MySQL) et schéma SQLite de test |
 | `scripts/` | mise en ligne, migrations, lancement local |
 
@@ -65,6 +65,19 @@ Les accès FTP et MySQL et le mot de passe de l'administration sont dans `.env.d
 
 1. `npm run migrate` si un nouveau fichier SQL a été ajouté. La base n'étant joignable que depuis l'hébergement, la commande dépose un script PHP temporaire, l'appelle une fois, puis le supprime.
 2. `npm run deploy`. Le script génère `api/config.php` et envoie `out/` sans rien supprimer sur le serveur.
+
+## Production
+
+- **Adresse** : `https://ouisnap.pourunouieternel.fr`. Elle figure dans `OVH_SITE_URL` (`.env.deploy`, utilisée dans les e-mails) et dans `SITE_URL` (`src/app/layout.tsx`, utilisée pour le référencement). Les QR codes imprimés la contiennent : la changer les rendrait inutilisables.
+- **Sécurité** : HTTPS forcé et mémorisé par le navigateur (HSTS), clés des liens privés jamais transmises à un autre site (`Referrer-Policy`), fichiers internes de l'API inaccessibles depuis le web, erreurs PHP jamais affichées.
+- **Administration** : après 5 mots de passe erronés depuis une même adresse en 15 minutes, la connexion est bloquée pendant ce délai.
+- **Référencement** : seule la page vitrine est ouverte aux moteurs de recherche (`robots.txt`).
+- **Tâche planifiée** : pour que les e-mails d'ouverture et de révélation partent même si personne ne visite le site, créer dans l'espace client OVH une tâche horaire sur `ouisnap/api/cron.php`.
+- **Sauvegardes** : les photos (`ouisnap-data/`) et la base ne sont sauvegardées que par les instantanés d'OVH.
+
+## Page vitrine
+
+Elle présente OuiSnap comme le complément des reportages de PourUnOuiEternel (pourunouieternel.fr) et se termine par un formulaire de demande : chaque demande est enregistrée dans la table `requests` et envoyée par e-mail à l'adresse `MAIL_FROM`. Ses illustrations sont de vraies captures de l'application (`public/media/apercu-*.jpg`).
 
 ## Créer un événement
 

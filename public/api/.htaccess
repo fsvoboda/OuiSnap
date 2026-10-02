@@ -1,0 +1,4 @@
+# Fichiers internes de l'API : inclus par les autres scripts, jamais appelés depuis le web.
+<FilesMatch "^(config|config\.example|lib|mail)\.php$">
+  Require all denied
+</FilesMatch>

@@ -14,10 +14,26 @@ const montserrat = Montserrat({
   subsets: ["latin"],
 });
 
+// Adresse de production. À changer ici, et dans OVH_SITE_URL de .env.deploy, si le site déménage.
+const SITE_URL = "https://ouisnap.pourunouieternel.fr";
+const DESCRIPTION =
+  "Vos invités scannent un QR code et photographient toute la journée : vous recevez toutes leurs photos dans un album surprise. Un service de PourUnOuiEternel.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "OuiSnap, l'appli de vos invités",
-  description:
-    "Vos invités scannent un QR code, photographient toute la journée, et les mariés reçoivent tout. Lancement fin 2026.",
+  description: DESCRIPTION,
+  alternates: { canonical: "/" },
+  // Aperçu affiché quand le lien du site est partagé (messageries, réseaux sociaux).
+  openGraph: {
+    type: "website",
+    locale: "fr_FR",
+    siteName: "OuiSnap",
+    title: "OuiSnap, l'appli de vos invités",
+    description: DESCRIPTION,
+    url: "/",
+    images: [{ url: "/media/apercu-connecte.jpg", width: 780, height: 1560 }],
+  },
 };
 
 export const viewport: Viewport = {

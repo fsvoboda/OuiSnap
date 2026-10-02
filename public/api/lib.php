@@ -2,6 +2,9 @@
 // Fonctions communes de l'API.
 declare(strict_types=1);
 
+// En production, les erreurs PHP vont dans le journal du serveur, jamais à l'écran.
+ini_set('display_errors', '0');
+
 require_once __DIR__ . '/mail.php';
 
 function reply(int $code, array $body): never

@@ -301,7 +301,8 @@ function mail_html(array $mail): string
         . '</table></td></tr></table></body></html>';
 }
 
-function send_mail(string $to, array $mail): bool
+// $replyTo : adresse à laquelle répondre, quand ce n'est pas celle de OuiSnap.
+function send_mail(string $to, array $mail, ?string $replyTo = null): bool
 {
     $config = config();
     $text = mail_text($mail);
@@ -319,14 +320,14 @@ function send_mail(string $to, array $mail): bool
     }
 
     $from = $config['mail_from'] ?? '';
-    if ($from === '') {
+    if ($from === '' || $to === '') {
         error_log('OuiSnap : mail_from absent de la configuration, message non envoyé.');
         return false;
     }
     $boundary = 'ouisnap-' . bin2hex(random_bytes(12));
     $headers = implode("\r\n", [
         'From: OuiSnap <' . $from . '>',
-        'Reply-To: ' . $from,
+        'Reply-To: ' . ($replyTo ?? $from),
         'MIME-Version: 1.0',
         'Content-Type: multipart/alternative; boundary="' . $boundary . '"',
     ]);

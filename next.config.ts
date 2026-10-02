@@ -5,6 +5,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "export",
   trailingSlash: true,
+  // Pas de serveur Node en production : les images sont servies telles quelles.
+  images: { unoptimized: true },
 };
 
 export default nextConfig;

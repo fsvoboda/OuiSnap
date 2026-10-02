@@ -50,3 +50,19 @@ VALUES ('DEMO2026', 'Mariage de démonstration', date('now', 'localtime'), 10, '
 
 INSERT OR IGNORE INTO events (code, title, wedding_date, max_photos_per_guest, album_token_hash)
 VALUES ('PASSE2026', 'Julie & Enzo', '2026-06-20', NULL, '720228e4b7b018b5e0c8c5dcc15b8955175fa5e5826c7e80c267f2a2d397d0e0');
+
+CREATE TABLE IF NOT EXISTS admin_login_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip TEXT NOT NULL,
+  failed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  event_date TEXT NULL,
+  message TEXT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

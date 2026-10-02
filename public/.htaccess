@@ -2,3 +2,25 @@
 RewriteEngine On
 RewriteCond %{SERVER_PORT} 80
 RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+ErrorDocument 404 /404.html
+
+<IfModule mod_headers.c>
+  # Le navigateur ne revient plus jamais en HTTP sur ce site.
+  Header always set Strict-Transport-Security "max-age=15552000"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  # Les liens privés (album, session d'un invité) portent leur clé dans l'adresse :
+  # elle ne doit jamais être transmise à un autre site.
+  Header always set Referrer-Policy "same-origin"
+  Header always set Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+
+  # Fichiers au nom unique à chaque version : gardés en cache un an.
+  <FilesMatch "\.(js|css|woff2)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  # Pages : toujours revérifiées, pour qu'une mise en ligne soit visible tout de suite.
+  <FilesMatch "\.(html|txt)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
