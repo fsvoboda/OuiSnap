@@ -10,7 +10,7 @@ require_post();
 $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
 $event = null;
 if (preg_match('/^[A-Z0-9]{4,16}$/', $code)) {
-    $stmt = db()->prepare('SELECT id, title, kind, max_photos_per_guest, max_guests, wedding_date, starts_at, closes_at, reveal_at
+    $stmt = db()->prepare('SELECT id, code, title, kind, max_photos_per_guest, max_guests, wedding_date, starts_at, closes_at, reveal_at
          FROM events WHERE code = ?');
     $stmt->execute([$code]);
     $event = $stmt->fetch();
@@ -20,9 +20,11 @@ if (!$event) {
 }
 $eventId = (int) $event['id'];
 
+send_due_mails();
+
 $token = (string) ($_POST['token'] ?? '');
 if (is_token($token)) {
-    $stmt = db()->prepare('SELECT id, name FROM guests WHERE token_hash = ? AND event_id = ?');
+    $stmt = db()->prepare('SELECT id, name, email FROM guests WHERE token_hash = ? AND event_id = ?');
     $stmt->execute([hash('sha256', $token), $eventId]);
     $guest = $stmt->fetch();
     if ($guest) {
@@ -30,7 +32,7 @@ if (is_token($token)) {
             'ok' => true,
             'token' => $token,
             'name' => $guest['name'],
-            'event' => event_payload($event),
+            'event' => event_payload($event, $guest['email'] !== null),
             'count' => photo_count((int) $guest['id']),
         ]);
     }
@@ -55,8 +57,28 @@ if ($event['max_guests'] !== null) {
     }
 }
 
-$token = bin2hex(random_bytes(24));
-db()->prepare('INSERT INTO guests (event_id, token_hash, name) VALUES (?, ?, ?)')
-    ->execute([$eventId, hash('sha256', $token), $name]);
+// E-mail facultatif : sert uniquement à prévenir l'invité quand l'album sera dévoilé.
+$email = strtolower(trim((string) ($_POST['email'] ?? '')));
+if ($email !== '' && (strlen($email) > 254 || !filter_var($email, FILTER_VALIDATE_EMAIL))) {
+    fail(422, 'email', 'Cette adresse e-mail ne semble pas valide.');
+}
 
-reply(200, ['ok' => true, 'token' => $token, 'name' => $name, 'event' => event_payload($event), 'count' => 0]);
+$hasEmail = $email !== '';
+$token = bin2hex(random_bytes(24));
+// Le jeton n'est gardé en clair que pour les invités à qui un lien personnel est envoyé par e-mail.
+db()->prepare('INSERT INTO guests (event_id, token_hash, name, email, link_token) VALUES (?, ?, ?, ?, ?)')
+    ->execute([$eventId, hash('sha256', $token), $name, $hasEmail ? $email : null, $hasEmail ? $token : null]);
+
+if ($hasEmail) {
+    if (!send_mail($email, welcome_mail($event, $name, $token))) {
+        error_log("OuiSnap : échec de l'envoi du message de bienvenue à $email");
+    }
+}
+
+reply(200, [
+    'ok' => true,
+    'token' => $token,
+    'name' => $name,
+    'event' => event_payload($event, $hasEmail),
+    'count' => 0,
+]);

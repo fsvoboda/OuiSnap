@@ -5,7 +5,8 @@
 export type EventInfo = {
   title: string;
   kind: string;
-  maxPhotos: number | null;
+  maxPhotos: number | null; // limite de l'invité, bonus e-mail compris s'il l'a obtenu
+  emailBonus: number; // photos offertes à qui laisse son e-mail (0 si l'album est illimité)
   state: "upcoming" | "open" | "closed" | "expired";
   opensAt: string | null;
 };

@@ -8,10 +8,14 @@ CREATE TABLE IF NOT EXISTS events (
   code TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'mariage',
+  organizer_name TEXT NULL,
+  organizer_email TEXT NULL,
   wedding_date TEXT NULL,
   starts_at TEXT NULL,
   closes_at TEXT NULL,
+  open_mail_sent_at TEXT NULL,
   reveal_at TEXT NULL,
+  reveal_mail_sent_at TEXT NULL,
   max_guests INTEGER NULL,
   max_photos_per_guest INTEGER NULL,
   album_token_hash TEXT NULL UNIQUE,
@@ -24,6 +28,8 @@ CREATE TABLE IF NOT EXISTS guests (
   event_id INTEGER NOT NULL REFERENCES events (id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
+  email TEXT NULL,
+  link_token TEXT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

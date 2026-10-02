@@ -4,6 +4,7 @@ import { CaretLeft, CaretRight, DownloadSimple, Heart, X } from "@phosphor-icons
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Logo } from "@/components/logo";
 import { LazyThumb, ZoomablePhoto } from "@/components/photo-view";
+import { QrCard } from "@/components/qr-card";
 import { api, ApiError } from "@/lib/api";
 import { kindOf } from "@/lib/kinds";
 
@@ -11,6 +12,7 @@ type Photo = { id: number; width: number; height: number; guest: number; name: s
 type Album = {
   title: string;
   kind: string;
+  code: string;
   revealAt: string | null;
   revealed: boolean;
   total: number;
@@ -179,6 +181,13 @@ export function AlbumApp() {
             voir qui photographie.
           </p>
         </section>
+
+        <QrCard
+          code={album.code}
+          title={album.title}
+          label={kindOf(album.kind).album}
+          caption="Touchez pour l'afficher en plein écran et le faire scanner à vos invités."
+        />
 
         <section className="flex flex-col gap-6">
           <div className="flex items-end justify-between gap-4 border-b border-creme/15 pb-5">

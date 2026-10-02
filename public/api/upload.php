@@ -10,7 +10,7 @@ const THUMB_SIDE = 480;
 
 $guest = current_guest();
 require_open($guest);
-$max = $guest['max_photos_per_guest'] === null ? null : (int) $guest['max_photos_per_guest'];
+$max = guest_max_photos($guest, $guest['email'] !== null);
 $limitMessage = sprintf('Vous avez atteint la limite de %d photos fixée pour cet album.', $max ?? 0);
 
 $upload = $_FILES['photo'] ?? null;

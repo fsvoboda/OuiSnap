@@ -18,6 +18,7 @@ DATA="$DATA" php -r '
   $config = [
     "dsn" => "sqlite:$data/dev.sqlite",
     "storage" => "$data/storage",
+    "mail_log" => "$data/mails.log", // les e-mails sont écrits dans ce fichier, pas envoyés
     "admin_password_hash" => password_hash("admin", PASSWORD_DEFAULT), // mot de passe local : admin
   ];
   file_put_contents("out/api/config.php", "<?php\nreturn " . var_export($config, true) . ";\n");

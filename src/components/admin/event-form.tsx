@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { KINDS, type Kind } from "@/lib/kinds";
+import { uploadEventQr } from "@/lib/qr";
 import { buttonClass, inputClass, type AdminEvent } from "./types";
 
 // Les champs date du navigateur travaillent en heure locale, l'API en ISO (UTC).
@@ -16,7 +17,8 @@ const toIso = (value: string) => (value ? new Date(value).toISOString() : "");
 
 // La clôture est une date sans heure : l'album reste accessible jusqu'à la fin de ce jour-là.
 const closingDay = (iso: string | null) => toInput(iso).slice(0, 10);
-const closingIso = (day: string) => (day ? new Date(`${day}T23:59:59`).toISOString() : "");
+const closingIso = (day: string) =>
+  day ? new Date(`${day}T23:59:59`).toISOString() : "";
 
 // Clôture proposée par défaut : deux semaines après le début.
 function twoWeeksLater(start: string) {
@@ -43,13 +45,23 @@ export function EventForm({
 }) {
   const [title, setTitle] = useState(event?.title ?? "");
   const [kind, setKind] = useState(event?.kind ?? "mariage");
+  const [organizerName, setOrganizerName] = useState(
+    event?.organizerName ?? "",
+  );
+  const [organizerEmail, setOrganizerEmail] = useState(
+    event?.organizerEmail ?? "",
+  );
   const [startsAt, setStartsAt] = useState(toInput(event?.startsAt ?? null));
   const [closesOn, setClosesOn] = useState(closingDay(event?.closesAt ?? null));
   const [closesEdited, setClosesEdited] = useState(Boolean(event));
   const [revealAt, setRevealAt] = useState(toInput(event?.revealAt ?? null));
   const [revealEdited, setRevealEdited] = useState(Boolean(event));
-  const [maxGuests, setMaxGuests] = useState(event?.maxGuests?.toString() ?? "");
-  const [maxPhotos, setMaxPhotos] = useState(event?.maxPhotos?.toString() ?? "");
+  const [maxGuests, setMaxGuests] = useState(
+    event?.maxGuests?.toString() ?? "",
+  );
+  const [maxPhotos, setMaxPhotos] = useState(
+    event?.maxPhotos?.toString() ?? "",
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,16 +70,21 @@ export function EventForm({
     setSaving(true);
     setError(null);
     try {
-      await api("admin-event-save", {
+      const saved = await api<{ event: AdminEvent }>("admin-event-save", {
         ...(event ? { id: String(event.id) } : {}),
         title,
         kind,
+        organizerName,
+        organizerEmail,
         startsAt: toIso(startsAt),
         closesAt: closingIso(closesOn),
         revealAt: toIso(revealAt),
         maxGuests,
         maxPhotos,
       });
+      // Le QR code doit être sur le serveur avant l'envoi du message d'ouverture aux organisateurs.
+      if (!saved.event.hasQr)
+        await uploadEventQr(saved.event.id, saved.event.code).catch(() => {});
       onSaved();
     } catch (reason) {
       setError((reason as ApiError).message);
@@ -112,7 +129,51 @@ export function EventForm({
           placeholder="Julie & Enzo"
           className={inputClass}
         />
-        <p className="text-sm text-brume">Affiché aux invités et aux organisateurs.</p>
+        <p className="text-sm text-brume">
+          Affiché aux invités et aux organisateurs.
+        </p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="organizerName" className="libelle text-brume">
+            Nom des organisateurs
+          </label>
+          <input
+            id="organizerName"
+            required
+            maxLength={80}
+            autoComplete="off"
+            value={organizerName}
+            onChange={(change) => setOrganizerName(change.target.value)}
+            placeholder="Julie et Enzo"
+            className={inputClass}
+          />
+          <p className="text-sm text-brume">
+            Utilisé pour les saluer dans leurs messages.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="organizerEmail" className="libelle text-brume">
+            E-mail des organisateurs
+          </label>
+          <input
+            id="organizerEmail"
+            type="email"
+            required
+            maxLength={254}
+            autoComplete="off"
+            value={organizerEmail}
+            onChange={(change) => setOrganizerEmail(change.target.value)}
+            placeholder="julie.enzo@exemple.fr"
+            className={inputClass}
+          />
+          <p className="text-sm text-brume">
+            Ils reçoivent un message à l&apos;ouverture, avec le QR code et le
+            lien de leur album, puis un autre à la révélation.
+          </p>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
@@ -127,12 +188,16 @@ export function EventForm({
             value={startsAt}
             onChange={(change) => {
               setStartsAt(change.target.value);
-              if (!revealEdited && change.target.value) setRevealAt(nextDayNoon(change.target.value));
-              if (!closesEdited && change.target.value) setClosesOn(twoWeeksLater(change.target.value));
+              if (!revealEdited && change.target.value)
+                setRevealAt(nextDayNoon(change.target.value));
+              if (!closesEdited && change.target.value)
+                setClosesOn(twoWeeksLater(change.target.value));
             }}
             className={inputClass}
           />
-          <p className="text-sm text-brume">Les invités peuvent photographier.</p>
+          <p className="text-sm text-brume">
+            Les invités peuvent photographier.
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -150,7 +215,9 @@ export function EventForm({
             }}
             className={inputClass}
           />
-          <p className="text-sm text-brume">Fin des envois, les photos sont dévoilées.</p>
+          <p className="text-sm text-brume">
+            Fin des envois, les photos sont dévoilées.
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -189,7 +256,9 @@ export function EventForm({
             placeholder="Illimité"
             className={inputClass}
           />
-          <p className="text-sm text-brume">Nombre d&apos;invités pouvant rejoindre l&apos;album.</p>
+          <p className="text-sm text-brume">
+            Nombre d&apos;invités pouvant rejoindre l&apos;album.
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -207,7 +276,9 @@ export function EventForm({
             placeholder="Illimité"
             className={inputClass}
           />
-          <p className="text-sm text-brume">Laisser vide pour ne pas limiter.</p>
+          <p className="text-sm text-brume">
+            Laisser vide pour ne pas limiter.
+          </p>
         </div>
       </div>
 
@@ -218,10 +289,22 @@ export function EventForm({
       )}
 
       <div className="flex flex-wrap gap-3">
-        <button type="submit" disabled={saving} className={`${buttonClass} bg-or text-sapin-950`}>
-          {saving ? "Enregistrement…" : event ? "Enregistrer" : "Créer l'événement"}
+        <button
+          type="submit"
+          disabled={saving}
+          className={`${buttonClass} bg-or text-sapin-950`}
+        >
+          {saving
+            ? "Enregistrement…"
+            : event
+              ? "Enregistrer"
+              : "Créer l'événement"}
         </button>
-        <button type="button" onClick={onCancel} className={`${buttonClass} border border-creme/30`}>
+        <button
+          type="button"
+          onClick={onCancel}
+          className={`${buttonClass} border border-creme/30`}
+        >
           Annuler
         </button>
       </div>

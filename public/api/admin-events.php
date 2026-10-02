@@ -12,9 +12,12 @@ foreach (db()->query('SELECT id FROM events WHERE album_key IS NULL')->fetchAll(
         ->execute([$key, hash('sha256', $key), (int) $row['id']]);
 }
 
+send_due_mails();
+
 $rows = db()->query(
     'SELECT e.*,
             (SELECT COUNT(*) FROM guests g WHERE g.event_id = e.id) AS guests,
+            (SELECT COUNT(*) FROM guests g WHERE g.event_id = e.id AND g.email IS NOT NULL) AS emails,
             (SELECT COUNT(*) FROM photos p WHERE p.event_id = e.id) AS photos,
             (SELECT COALESCE(SUM(p.bytes), 0) FROM photos p WHERE p.event_id = e.id) AS bytes
      FROM events e

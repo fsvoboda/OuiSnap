@@ -55,10 +55,17 @@ export function GuestApp() {
   useEffect(() => {
     let cancelled = false;
     async function start() {
-      const scanned = (new URLSearchParams(window.location.search).get("c") ?? "").toUpperCase();
+      const query = new URLSearchParams(window.location.search);
+      const scanned = (query.get("c") ?? "").toUpperCase();
       try {
         if (!scanned) throw new ApiError("event", "Scannez le QR code posé sur votre table pour rejoindre l'album.", 404);
-        const stored = readToken(scanned);
+        // Lien personnel reçu par e-mail : il rouvre la session, puis le jeton est retiré de l'adresse.
+        const linked = query.get("t") ?? "";
+        if (/^[a-f0-9]{48}$/.test(linked)) {
+          saveToken(scanned, linked);
+          window.history.replaceState(null, "", `${window.location.pathname}?c=${scanned}`);
+        }
+        const stored = /^[a-f0-9]{48}$/.test(linked) ? linked : readToken(scanned);
         const result = await api<JoinResult>("join", stored ? { code: scanned, token: stored } : { code: scanned });
         if (cancelled) return;
         setCode(scanned);
@@ -141,15 +148,20 @@ export function GuestApp() {
 
   async function join(form: React.FormEvent<HTMLFormElement>) {
     form.preventDefault();
-    const name = String(new FormData(form.currentTarget).get("name") ?? "").trim();
+    const fields = new FormData(form.currentTarget);
+    const name = String(fields.get("name") ?? "").trim();
+    const email = String(fields.get("email") ?? "").trim();
     if (!name) return setNameError(kindOf(event?.kind ?? "").nameNeeded);
     setJoining(true);
     setNameError(null);
     try {
-      const result = await api<JoinResult>("join", { code, name });
+      const result = await api<JoinResult>("join", { code, name, email });
       if (!result.token) throw new ApiError("name", "Ce prénom n'est pas valide.", 422);
       saveToken(code, result.token);
       tokenRef.current = result.token;
+      // La limite renvoyée tient compte du bonus accordé pour l'e-mail.
+      setEvent(result.event);
+      maxRef.current = result.event.maxPhotos;
       setToken(result.token);
       setCount(result.count);
       setScreen("camera");
@@ -297,6 +309,24 @@ export function GuestApp() {
           >
             {nameError ?? kindOf(event.kind).seenBy}
           </p>
+          <label htmlFor="email" className="libelle mt-3 text-sapin-700">
+            Votre e-mail (facultatif)
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            maxLength={254}
+            autoComplete="email"
+            inputMode="email"
+            aria-describedby="email-aide"
+            className="h-13 rounded-full border border-sapin-700/40 bg-white/60 px-6 text-base text-sapin-900 focus:border-sapin-900 focus:outline-none"
+          />
+          <p id="email-aide" className="text-sm text-sapin-700">
+            {max !== null && event.emailBonus > 0
+              ? `${event.emailBonus} photos supplémentaires offertes si vous laissez votre e-mail. Vous serez aussi prévenu quand l'album sera dévoilé.`
+              : "Pour être prévenu quand l'album sera dévoilé. Rien d'autre."}
+          </p>
           <button
             type="submit"
             disabled={joining}
@@ -306,7 +336,8 @@ export function GuestApp() {
           </button>
           {max !== null && (
             <p className="mt-2 text-center text-sm text-sapin-700">
-              Vous pouvez envoyer jusqu&apos;à {max} photos.
+              Vous pouvez envoyer jusqu&apos;à {max} photos
+              {event.emailBonus > 0 ? `, ou ${max + event.emailBonus} avec votre e-mail` : ""}.
             </p>
           )}
         </form>

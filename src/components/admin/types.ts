@@ -3,6 +3,9 @@ export type AdminEvent = {
   code: string;
   title: string;
   kind: string;
+  organizerName: string | null;
+  organizerEmail: string | null;
+  hasQr: boolean; // image du QR code déposée sur le serveur, pour les e-mails
   startsAt: string | null;
   closesAt: string | null;
   revealAt: string | null;
@@ -12,6 +15,8 @@ export type AdminEvent = {
   state: "upcoming" | "open" | "closed" | "expired";
   revealed: boolean;
   expired: boolean;
+  emails: number; // photographes ayant laissé une adresse
+  mailSentAt: string | null; // envoi du message de révélation
   guests: number;
   photos: number;
   bytes: number;

@@ -17,13 +17,17 @@ En ligne : https://ouisnap.pourunouieternel.fr
 ## Règles du produit
 
 - Un événement a une nature (mariage, baptême, anniversaire, autre) ; les textes de l'appli s'y adaptent.
-- L'invité n'installe rien et ne crée pas de compte : il scanne, donne son prénom, photographie.
+- L'invité n'installe rien et ne crée pas de compte : il scanne, donne son prénom (et son e-mail s'il le souhaite), photographie.
 - Chaque événement a une date de **début** (pas d'envoi avant), de **révélation** (fin des envois, les organisateurs découvrent les photos ; par défaut le lendemain du début à 12h00) et de **clôture** (une date sans heure, proposée deux semaines après le début, postérieure à la révélation ; passé ce jour, l'album n'est plus accessible aux organisateurs ni aux invités ; vide = jamais). Les photos d'un album clôturé restent sur le serveur.
 - Deux limites réglables par événement, vides = illimité : nombre de photographes, et nombre de photos par photographe.
 - Un invité ne voit que ses propres photos, et peut en supprimer tant que l'album est ouvert.
 - L'album est une surprise : avant la révélation, les organisateurs voient seulement qui a posté et combien.
 - Après la révélation, les organisateurs voient l'album rangé par invité, le téléchargent en ZIP et peuvent poser un coup de cœur sur une photo ; le photographe le voit sur la sienne.
-- L'administrateur voit toutes les photos à tout moment et peut en supprimer, même après la révélation.
+- Un invité qui laisse son e-mail reçoit 5 photos supplémentaires (si l'album est limité) et un message de bienvenue contenant un lien personnel pour revenir photographier depuis n'importe quel appareil.
+- Le nom et l'adresse e-mail des organisateurs sont obligatoires à la création d'un événement : ils reçoivent un message à l'ouverture (QR code à montrer aux invités, lien de leur album) puis un autre à la révélation.
+- Le QR code des invités figure aussi dans le message de bienvenue des photographes et sur la page des organisateurs ; un appui l'affiche en plein écran (`/qr/?c=CODE`).
+- À la révélation, un e-mail prévient les photographes qui ont laissé leur adresse et envoyé au moins une photo. Il part de l'adresse `MAIL_FROM`, à la première visite du site après la révélation (ou par la tâche planifiée `api/cron.php`), une seule fois par album.
+- L'administrateur voit toutes les photos à tout moment et peut en supprimer, même après la révélation. Il peut aussi supprimer un événement entier : ses photos sont alors effacées du serveur.
 
 ## Architecture
 
@@ -35,7 +39,7 @@ L'hébergement est un mutualisé OVH (PHP 8.3 + MySQL, pas de Node.js) :
 
 | Dossier | Contenu |
 |---|---|
-| `src/app/` | page vitrine (`/`), appli invité (`/e/?c=CODE`), album des organisateurs (`/album/?k=CLÉ`), administration (`/admin/`) |
+| `src/app/` | page vitrine (`/`), appli invité (`/e/?c=CODE`), album des organisateurs (`/album/?k=CLÉ`), QR code plein écran (`/qr/?c=CODE`), administration (`/admin/`) |
 | `src/components/guest/` | écrans de l'appli invité |
 | `src/components/album/` | écrans de l'album des organisateurs |
 | `src/components/admin/` | écrans de l'administration (`/admin/`) |
@@ -53,7 +57,7 @@ npm run migrate   # applique sur la base OVH les fichiers database/NNN_*.sql man
 npm run deploy    # compile et envoie le site chez OVH (ajouter -- --dry-run pour simuler)
 ```
 
-`npm run local` ouvre l'appli sur http://localhost:8000/e/?c=DEMO2026 et l'administration sur http://localhost:8000/admin/ (mot de passe local : `admin`). Les données de test vivent dans `.local/`.
+`npm run local` ouvre l'appli sur http://localhost:8000/e/?c=DEMO2026 et l'administration sur http://localhost:8000/admin/ (mot de passe local : `admin`). Les données de test vivent dans `.local/` ; les e-mails n'y sont pas envoyés mais écrits dans `.local/mails.log`.
 
 ## Mise en ligne
 

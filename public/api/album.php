@@ -5,6 +5,7 @@ require __DIR__ . '/lib.php';
 require_post();
 
 $event = current_album();
+send_due_mails();
 $revealed = is_revealed($event);
 
 $stmt = db()->prepare(
@@ -21,6 +22,7 @@ $body = [
     'ok' => true,
     'title' => $event['title'],
     'kind' => $event['kind'],
+    'code' => $event['code'], // pour afficher le QR code des invités
     'revealAt' => reveal_at($event)?->format(DATE_ATOM),
     'revealed' => $revealed,
     'total' => array_sum(array_column($guests, 'count')),

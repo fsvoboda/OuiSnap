@@ -43,6 +43,19 @@ $kind = (string) ($_POST['kind'] ?? '');
 if (!in_array($kind, EVENT_KINDS, true)) {
     fail(422, 'invalid', "La nature de l'événement n'est pas reconnue.");
 }
+// Nom des organisateurs, obligatoire : il ouvre les messages qui leur sont envoyés.
+$organizerName = trim(preg_replace('/\s+/u', ' ', (string) ($_POST['organizerName'] ?? '')) ?? '');
+if ($organizerName === '' || mb_strlen($organizerName) > 80) {
+    fail(422, 'invalid', 'Le nom des organisateurs est obligatoire (80 caractères au plus).');
+}
+// E-mail des organisateurs, obligatoire : message à l'ouverture et à la révélation.
+$organizerEmail = strtolower(trim((string) ($_POST['organizerEmail'] ?? '')));
+if ($organizerEmail === '') {
+    fail(422, 'invalid', "L'e-mail des organisateurs est obligatoire.");
+}
+if (strlen($organizerEmail) > 254 || !filter_var($organizerEmail, FILTER_VALIDATE_EMAIL)) {
+    fail(422, 'invalid', "L'e-mail des organisateurs ne semble pas valide.");
+}
 $starts = posted_date('startsAt', 'La date de début', true);
 $closes = posted_date('closesAt', 'La date de clôture', false);
 $reveal = posted_date('revealAt', 'La date de révélation', true);
@@ -57,13 +70,13 @@ if ($closes !== null && $closes <= $reveal) {
 }
 
 $format = fn (?DateTimeImmutable $date) => $date?->format('Y-m-d H:i:s');
-$values = [$title, $kind, $format($starts), $format($closes), $format($reveal), $maxGuests, $maxPhotos];
+$values = [$title, $kind, $organizerName, $organizerEmail, $format($starts), $format($closes), $format($reveal), $maxGuests, $maxPhotos];
 $id = (int) ($_POST['id'] ?? 0);
 
 if ($id > 0) {
     $stmt = db()->prepare(
         'UPDATE events
-         SET title = ?, kind = ?, starts_at = ?, closes_at = ?, reveal_at = ?, max_guests = ?, max_photos_per_guest = ?
+         SET title = ?, kind = ?, organizer_name = ?, organizer_email = ?, starts_at = ?, closes_at = ?, reveal_at = ?, max_guests = ?, max_photos_per_guest = ?
          WHERE id = ?'
     );
     $stmt->execute([...$values, $id]);
@@ -77,8 +90,9 @@ if ($id > 0) {
     $key = bin2hex(random_bytes(24));
     $stmt = db()->prepare(
         'INSERT INTO events
-           (title, kind, starts_at, closes_at, reveal_at, max_guests, max_photos_per_guest, code, album_key, album_token_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+           (title, kind, organizer_name, organizer_email, starts_at, closes_at, reveal_at, max_guests,
+            max_photos_per_guest, code, album_key, album_token_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([...$values, $code, $key, hash('sha256', $key)]);
     $id = (int) db()->lastInsertId();

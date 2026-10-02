@@ -1,10 +1,11 @@
 "use client";
 
-import { Images, PencilSimple, Plus, QrCode, SignOut } from "@phosphor-icons/react";
+import { Images, PencilSimple, Plus, QrCode, SignOut, Trash } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
 import { api, ApiError } from "@/lib/api";
 import { kindOf } from "@/lib/kinds";
+import { uploadEventQr } from "@/lib/qr";
 import { AlbumView } from "./album-view";
 import { EventForm } from "./event-form";
 import { EventLinks } from "./event-links";
@@ -32,6 +33,22 @@ export function AdminApp() {
   const [links, setLinks] = useState<number | null>(null); // album dont les liens sont dépliés
   const [error, setError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [removing, setRemoving] = useState<number | null>(null); // album dont la suppression attend confirmation
+  const [deleting, setDeleting] = useState(false);
+
+  async function remove(event: AdminEvent) {
+    setDeleting(true);
+    setError(null);
+    try {
+      await api("admin-event-delete", { id: String(event.id) });
+      setRemoving(null);
+      await load();
+    } catch (reason) {
+      setError((reason as ApiError).message);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -39,6 +56,10 @@ export function AdminApp() {
       setEvents(result.events);
       setAuth("in");
       setError(null);
+      // Événements sans image de QR code sur le serveur (créés avant cette fonction) : on la dépose.
+      for (const event of result.events) {
+        if (!event.hasQr) uploadEventQr(event.id, event.code).catch(() => {});
+      }
     } catch (reason) {
       const failure = reason as ApiError;
       if (failure.status === 401) setAuth("out");
@@ -221,7 +242,25 @@ export function AdminApp() {
                   </div>
                   <div>
                     <dt className="text-brume">Maximum par photographe</dt>
-                    <dd className="tabular-nums">{event.maxPhotos ?? "illimité"}</dd>
+                    <dd className="tabular-nums">
+                      {event.maxPhotos === null ? "illimité" : `${event.maxPhotos} (+5 avec e-mail)`}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <dt className="text-brume">Organisateurs</dt>
+                    <dd className="break-all">
+                      {[event.organizerName, event.organizerEmail].filter(Boolean).join(", ") || "non renseignés"}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <dt className="text-brume">Message de révélation</dt>
+                    <dd>
+                      {event.emails} adresse{event.emails > 1 ? "s" : ""} e-mail recueillie
+                      {event.emails > 1 ? "s" : ""},{" "}
+                      {event.mailSentAt
+                        ? `envoi fait le ${formatDate(event.mailSentAt)}`
+                        : "envoi à la révélation"}
+                    </dd>
                   </div>
                 </dl>
 
@@ -251,7 +290,52 @@ export function AdminApp() {
                     <PencilSimple size={18} />
                     Modifier
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setRemoving(event.id)}
+                    aria-label={`Supprimer ${event.title}`}
+                    title="Supprimer"
+                    className="ml-auto grid size-11 place-items-center rounded-full border border-corail/60 text-[#f0a39e] transition-transform active:scale-95"
+                  >
+                    <Trash size={18} />
+                  </button>
                 </div>
+
+                {removing === event.id && (
+                  <div
+                    role="alertdialog"
+                    aria-label={`Supprimer ${event.title}`}
+                    className="flex flex-col gap-4 rounded-2xl border border-corail/60 p-4"
+                  >
+                    <p className="leading-relaxed">
+                      Supprimer définitivement « {event.title} » ?{" "}
+                      {event.photos > 0
+                        ? `Ses ${event.photos} photo${event.photos > 1 ? "s" : ""} seront effacées du serveur.`
+                        : "Il ne contient aucune photo."}{" "}
+                      Le QR code et le lien de l&apos;album ne fonctionneront plus. Cette action est
+                      irréversible.
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => remove(event)}
+                        className={`${buttonClass} bg-corail text-sapin-950`}
+                      >
+                        <Trash size={18} weight="bold" />
+                        {deleting ? "Suppression…" : "Supprimer définitivement"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => setRemoving(null)}
+                        className={`${buttonClass} border border-creme/30`}
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {links === event.id && <EventLinks event={event} />}
               </li>

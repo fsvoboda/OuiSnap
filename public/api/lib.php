@@ -1,6 +1,8 @@
 <?php
-// Fonctions communes de l'API invité.
+// Fonctions communes de l'API.
 declare(strict_types=1);
+
+require_once __DIR__ . '/mail.php';
 
 function reply(int $code, array $body): never
 {
@@ -73,6 +75,12 @@ function storage_dir(): string
     return config()['storage'] ?? dirname(__DIR__, 2) . '/ouisnap-data';
 }
 
+// Image du QR code d'un événement (envoyée par la page d'administration, utilisée dans les e-mails).
+function qr_path(string $code): string
+{
+    return storage_dir() . '/qr/' . $code . '.png';
+}
+
 function photo_path(int $eventId, string $file, bool $thumb = false): string
 {
     return sprintf('%s/%d/%s%s.jpg', storage_dir(), $eventId, $file, $thumb ? '_t' : '');
@@ -81,13 +89,26 @@ function photo_path(int $eventId, string $file, bool $thumb = false): string
 // Natures d'événement proposées dans l'administration.
 const EVENT_KINDS = ['mariage', 'bapteme', 'anniversaire', 'autre'];
 
-function event_payload(array $event): array
+// Photos supplémentaires offertes aux photographes qui laissent leur adresse e-mail.
+const EMAIL_BONUS = 5;
+
+// Limite de photos d'un invité : celle de l'événement, plus le bonus s'il a donné son e-mail.
+function guest_max_photos(array $event, bool $hasEmail): ?int
 {
     $max = $event['max_photos_per_guest'];
+    if ($max === null) {
+        return null;
+    }
+    return (int) $max + ($hasEmail ? EMAIL_BONUS : 0);
+}
+
+function event_payload(array $event, bool $hasEmail = false): array
+{
     return [
         'title' => $event['title'],
         'kind' => $event['kind'] ?? 'mariage',
-        'maxPhotos' => $max === null ? null : (int) $max,
+        'maxPhotos' => guest_max_photos($event, $hasEmail),
+        'emailBonus' => $event['max_photos_per_guest'] === null ? 0 : EMAIL_BONUS,
         'state' => event_state($event),
         'opensAt' => utc($event['starts_at'] ?? null)?->format(DATE_ATOM),
     ];
@@ -147,7 +168,7 @@ function current_guest(): array
     $token = (string) ($_POST['token'] ?? '');
     if (is_token($token)) {
         $stmt = db()->prepare(
-            'SELECT g.id, g.event_id, g.name, e.title, e.kind, e.max_photos_per_guest,
+            'SELECT g.id, g.event_id, g.name, g.email, e.title, e.kind, e.max_photos_per_guest,
                     e.wedding_date, e.starts_at, e.closes_at, e.reveal_at
              FROM guests g JOIN events e ON e.id = g.event_id
              WHERE g.token_hash = ?'
@@ -203,7 +224,7 @@ function current_album(): array
     if (is_token($key)) {
         // album_token_hash : anciens albums, dont seule l'empreinte de la clé était gardée.
         $stmt = db()->prepare(
-            'SELECT id, title, kind, wedding_date, reveal_at, closes_at
+            'SELECT id, code, title, kind, wedding_date, reveal_at, closes_at
              FROM events WHERE album_key = ? OR album_token_hash = ?'
         );
         $stmt->execute([$key, hash('sha256', $key)]);
@@ -289,6 +310,9 @@ function admin_event_payload(array $event): array
         'code' => $event['code'],
         'title' => $event['title'],
         'kind' => $event['kind'],
+        'organizerName' => $event['organizer_name'] ?? null,
+        'organizerEmail' => $event['organizer_email'] ?? null,
+        'hasQr' => is_file(qr_path($event['code'])),
         'startsAt' => utc($event['starts_at'])?->format(DATE_ATOM),
         'closesAt' => utc($event['closes_at'])?->format(DATE_ATOM),
         'revealAt' => reveal_at($event)?->format(DATE_ATOM),
@@ -298,6 +322,8 @@ function admin_event_payload(array $event): array
         'state' => event_state($event),
         'revealed' => is_revealed($event),
         'expired' => is_expired($event),
+        'emails' => (int) ($event['emails'] ?? 0),
+        'mailSentAt' => utc($event['reveal_mail_sent_at'] ?? null)?->format(DATE_ATOM),
         'guests' => (int) ($event['guests'] ?? 0),
         'photos' => (int) ($event['photos'] ?? 0),
         'bytes' => (int) ($event['bytes'] ?? 0),

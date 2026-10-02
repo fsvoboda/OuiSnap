@@ -1,9 +1,9 @@
 "use client";
 
 import { Check, Copy, DownloadSimple, FilePdf } from "@phosphor-icons/react";
-import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { kindOf } from "@/lib/kinds";
+import { guestUrl as guestUrlOf, qrDataUrl } from "@/lib/qr";
 import { downloadTablePdf } from "@/lib/table-card";
 import { buttonClass, type AdminEvent } from "./types";
 
@@ -43,7 +43,7 @@ function CopyRow({ label, url }: { label: string; url: string }) {
 // QR code, PDF des tables et lien privé de l'album pour un événement.
 export function EventLinks({ event }: { event: AdminEvent }) {
   const origin = window.location.origin;
-  const guestUrl = `${origin}/e/?c=${event.code}`;
+  const guestUrl = guestUrlOf(event.code);
   const [qr, setQr] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState(false);
@@ -67,7 +67,7 @@ export function EventLinks({ event }: { event: AdminEvent }) {
 
   useEffect(() => {
     let cancelled = false;
-    QRCode.toDataURL(guestUrl, { width: 900, margin: 2, color: { dark: "#1a2620", light: "#ffffff" } })
+    qrDataUrl(event.code)
       .then((url) => {
         if (!cancelled) setQr(url);
       })
@@ -75,7 +75,7 @@ export function EventLinks({ event }: { event: AdminEvent }) {
     return () => {
       cancelled = true;
     };
-  }, [guestUrl]);
+  }, [event.code]);
 
   return (
     <div className="grid gap-6 border-t border-creme/15 pt-5 md:grid-cols-[auto_1fr]">

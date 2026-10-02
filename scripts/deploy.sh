@@ -55,6 +55,8 @@ php -r '
     "user" => getenv("DB_USER"),
     "password" => getenv("DB_PASSWORD"),
     "admin_password_hash" => password_hash(getenv("ADMIN_PASSWORD"), PASSWORD_DEFAULT),
+    "site_url" => getenv("OVH_SITE_URL") ?: "",
+    "mail_from" => getenv("MAIL_FROM") ?: "",
   ];
   file_put_contents("out/api/config.php", "<?php\nreturn " . var_export($config, true) . ";\n");
 '
