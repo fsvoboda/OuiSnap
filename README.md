@@ -15,8 +15,10 @@ npm run build    # génère le site dans out/
 ### Mise en ligne chez OVH
 
 1. Dans phpMyAdmin, exécuter `database/001_waitlist.sql`.
-2. Copier `public/api/config.example.php` en `public/api/config.php` et renseigner les identifiants MySQL.
-3. `npm run build`, puis déposer le contenu de `out/` dans le dossier `www/` par FTP.
+2. Copier `deploy.env.example` en `.env.deploy` et renseigner les accès FTP et MySQL.
+3. `npm run deploy -- --dry-run` pour vérifier, puis `npm run deploy` pour envoyer.
+
+Le script compile le site, génère `api/config.php` et envoie `out/` dans le dossier indiqué, sans rien supprimer sur le serveur.
 
 PHP 8.1 minimum (à régler dans l'espace client OVH).
 
