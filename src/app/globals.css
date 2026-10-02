@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* Palette et typographies reprises du teaser OuiSnap. Thème unique (sombre). */
+@theme inline {
+  --color-sapin-950: #121a16;
+  --color-sapin-900: #1a2620;
+  --color-sapin-800: #23332b;
+  --color-sapin-700: #30443a;
+  --color-ambre: #57482f;
+  --color-nuit: #1e2942;
+  --color-or: #cba660;
+  --color-or-clair: #e2c88f;
+  --color-creme: #f5f0e6;
+  --color-brume: #b7c1b7;
+  --color-corail: #d9605a;
+
+  --font-serif: var(--font-cormorant), "Cormorant Garamond", Georgia, serif;
+  --font-sans: var(--font-montserrat), "Montserrat", system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  background: var(--color-sapin-900);
+  color: var(--color-creme);
+}
+
+::selection {
+  background: var(--color-or);
+  color: var(--color-sapin-950);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-or-clair);
+  outline-offset: 3px;
+}
+
+/* Petites capitales espacées, comme les libellés du teaser. */
+@utility libelle {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
