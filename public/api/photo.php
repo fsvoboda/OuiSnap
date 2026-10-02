@@ -5,6 +5,7 @@ require __DIR__ . '/lib.php';
 require_post();
 
 $guest = current_guest();
+require_not_expired($guest);
 $photo = own_photo($guest);
 
 $path = photo_path($guest['event_id'], $photo['file'], ($_POST['size'] ?? '') === 'thumb');

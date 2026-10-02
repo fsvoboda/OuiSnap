@@ -78,14 +78,55 @@ function photo_path(int $eventId, string $file, bool $thumb = false): string
     return sprintf('%s/%d/%s%s.jpg', storage_dir(), $eventId, $file, $thumb ? '_t' : '');
 }
 
+// Natures d'événement proposées dans l'administration.
+const EVENT_KINDS = ['mariage', 'bapteme', 'anniversaire', 'autre'];
+
 function event_payload(array $event): array
 {
     $max = $event['max_photos_per_guest'];
     return [
         'title' => $event['title'],
+        'kind' => $event['kind'] ?? 'mariage',
         'maxPhotos' => $max === null ? null : (int) $max,
-        'closed' => is_revealed($event),
+        'state' => event_state($event),
+        'opensAt' => utc($event['starts_at'] ?? null)?->format(DATE_ATOM),
     ];
+}
+
+// Les dates sont stockées en UTC dans la base.
+function utc(?string $value): ?DateTimeImmutable
+{
+    return empty($value) ? null : new DateTimeImmutable($value, new DateTimeZone('UTC'));
+}
+
+// Clôture : fin de l'accès à l'album, pour les organisateurs comme pour les invités.
+function is_expired(array $event): bool
+{
+    $closes = utc($event['closes_at'] ?? null);
+    return $closes !== null && new DateTimeImmutable('now') >= $closes;
+}
+
+// upcoming : pas encore ouvert ; open : les invités photographient ;
+// closed : album dévoilé, figé pour les invités ; expired : album clôturé, plus accessible.
+function event_state(array $event): string
+{
+    if (is_expired($event)) {
+        return 'expired';
+    }
+    $starts = utc($event['starts_at'] ?? null);
+    if ($starts && new DateTimeImmutable('now') < $starts) {
+        return 'upcoming';
+    }
+    return is_revealed($event) ? 'closed' : 'open';
+}
+
+const EXPIRED_MESSAGE = 'Cet album est clôturé : il n\'est plus accessible.';
+
+function require_not_expired(array $event): void
+{
+    if (is_expired($event)) {
+        fail(410, 'expired', EXPIRED_MESSAGE);
+    }
 }
 
 function photo_count(int $guestId): int
@@ -106,7 +147,8 @@ function current_guest(): array
     $token = (string) ($_POST['token'] ?? '');
     if (is_token($token)) {
         $stmt = db()->prepare(
-            'SELECT g.id, g.event_id, g.name, e.title, e.max_photos_per_guest, e.wedding_date, e.reveal_at
+            'SELECT g.id, g.event_id, g.name, e.title, e.kind, e.max_photos_per_guest,
+                    e.wedding_date, e.starts_at, e.closes_at, e.reveal_at
              FROM guests g JOIN events e ON e.id = g.event_id
              WHERE g.token_hash = ?'
         );
@@ -154,28 +196,40 @@ function is_revealed(array $event): bool
     return $at !== null && new DateTimeImmutable('now') >= $at;
 }
 
-// Mariage reconnu par la clé du lien privé remis aux mariés.
+// Événement reconnu par la clé du lien privé remis aux organisateurs.
 function current_album(): array
 {
     $key = (string) ($_POST['token'] ?? '');
     if (is_token($key)) {
-        $stmt = db()->prepare('SELECT id, title, wedding_date, reveal_at FROM events WHERE album_token_hash = ?');
-        $stmt->execute([hash('sha256', $key)]);
+        // album_token_hash : anciens albums, dont seule l'empreinte de la clé était gardée.
+        $stmt = db()->prepare(
+            'SELECT id, title, kind, wedding_date, reveal_at, closes_at
+             FROM events WHERE album_key = ? OR album_token_hash = ?'
+        );
+        $stmt->execute([$key, hash('sha256', $key)]);
         $event = $stmt->fetch();
         if ($event) {
             $event['id'] = (int) $event['id'];
+            require_not_expired($event);
             return $event;
         }
     }
     fail(404, 'album', "Ce lien d'album n'est pas valide.");
 }
 
-// Une fois l'album dévoilé aux mariés, il est figé : plus aucun ajout ni suppression.
-const CLOSED_MESSAGE = "L'album a été dévoilé aux mariés : il n'est plus possible d'ajouter ou de supprimer des photos.";
+// Une fois l'album dévoilé, il est figé pour les invités : plus aucun ajout ni suppression.
+const CLOSED_MESSAGE = "L'album a été dévoilé : il n'est plus possible d'ajouter ou de supprimer des photos.";
 
 function require_open(array $event): void
 {
-    if (is_revealed($event)) {
+    $state = event_state($event);
+    if ($state === 'expired') {
+        fail(410, 'expired', EXPIRED_MESSAGE);
+    }
+    if ($state === 'upcoming') {
+        fail(403, 'upcoming', "L'album n'est pas encore ouvert.");
+    }
+    if ($state === 'closed') {
         fail(403, 'closed', CLOSED_MESSAGE);
     }
 }
@@ -201,4 +255,57 @@ function slug(string $text, string $fallback): string
     ]);
     $slug = trim(preg_replace('/[^A-Za-z0-9]+/', '-', $plain) ?? '', '-');
     return $slug === '' ? $fallback : $slug;
+}
+
+// --- Administration ---------------------------------------------------------
+
+function start_admin_session(): void
+{
+    session_name('ouisnap_admin');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => ($_SERVER['HTTPS'] ?? 'off') !== 'off',
+        'httponly' => true,
+        'samesite' => 'Strict',
+    ]);
+    session_start();
+}
+
+function require_admin(): void
+{
+    start_admin_session();
+    if (empty($_SESSION['admin'])) {
+        fail(401, 'auth', 'Connexion requise.');
+    }
+}
+
+// Album vu par l'administrateur : réglages, liens et compteurs.
+function admin_event_payload(array $event): array
+{
+    $int = fn ($value) => $value === null ? null : (int) $value;
+    return [
+        'id' => (int) $event['id'],
+        'code' => $event['code'],
+        'title' => $event['title'],
+        'kind' => $event['kind'],
+        'startsAt' => utc($event['starts_at'])?->format(DATE_ATOM),
+        'closesAt' => utc($event['closes_at'])?->format(DATE_ATOM),
+        'revealAt' => reveal_at($event)?->format(DATE_ATOM),
+        'maxGuests' => $int($event['max_guests']),
+        'maxPhotos' => $int($event['max_photos_per_guest']),
+        'albumKey' => $event['album_key'],
+        'state' => event_state($event),
+        'revealed' => is_revealed($event),
+        'expired' => is_expired($event),
+        'guests' => (int) ($event['guests'] ?? 0),
+        'photos' => (int) ($event['photos'] ?? 0),
+        'bytes' => (int) ($event['bytes'] ?? 0),
+    ];
+}
+
+function delete_photo_files(int $eventId, string $file): void
+{
+    @unlink(photo_path($eventId, $file));
+    @unlink(photo_path($eventId, $file, true));
 }

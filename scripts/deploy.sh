@@ -19,7 +19,7 @@ set -a
 source "$CONFIG"
 set +a
 
-for name in OVH_FTP_HOST OVH_FTP_USER OVH_FTP_PASSWORD OVH_REMOTE_DIR DB_HOST DB_NAME DB_USER DB_PASSWORD; do
+for name in OVH_FTP_HOST OVH_FTP_USER OVH_FTP_PASSWORD OVH_REMOTE_DIR DB_HOST DB_NAME DB_USER DB_PASSWORD ADMIN_PASSWORD; do
   if [[ -z "${!name:-}" ]]; then
     echo "Valeur manquante dans $CONFIG : $name" >&2
     exit 1
@@ -46,7 +46,7 @@ command -v lftp >/dev/null || { echo "lftp est requis (brew install lftp)." >&2;
 
 npm run build
 
-# Identifiants MySQL écrits dans la copie compilée seulement, jamais dans le dépôt.
+# Identifiants MySQL et empreinte du mot de passe admin : écrits dans la copie compilée seulement.
 php -r '
   $config = [
     "host" => getenv("DB_HOST"),
@@ -54,6 +54,7 @@ php -r '
     "database" => getenv("DB_NAME"),
     "user" => getenv("DB_USER"),
     "password" => getenv("DB_PASSWORD"),
+    "admin_password_hash" => password_hash(getenv("ADMIN_PASSWORD"), PASSWORD_DEFAULT),
   ];
   file_put_contents("out/api/config.php", "<?php\nreturn " . var_export($config, true) . ";\n");
 '

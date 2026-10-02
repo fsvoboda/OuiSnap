@@ -4,6 +4,7 @@ import { Check } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/logo";
 import { api, ApiError, type EventInfo } from "@/lib/api";
+import { kindOf } from "@/lib/kinds";
 import { Camera } from "./camera";
 import { MyPhotos } from "./my-photos";
 
@@ -62,7 +63,7 @@ export function GuestApp() {
         if (cancelled) return;
         setCode(scanned);
         setEvent(result.event);
-        setClosed(result.event.closed);
+        setClosed(result.event.state === "closed");
         maxRef.current = result.event.maxPhotos;
         if (result.token) {
           tokenRef.current = result.token;
@@ -106,7 +107,7 @@ export function GuestApp() {
           queue.current = [];
           if (maxRef.current !== null) setCount(maxRef.current);
         }
-        // L'album vient d'être dévoilé aux mariés : l'appli passe en lecture seule.
+        // L'album vient d'être dévoilé : l'appli passe en lecture seule.
         if (error.code === "closed") {
           queue.current = [];
           setClosed(true);
@@ -141,7 +142,7 @@ export function GuestApp() {
   async function join(form: React.FormEvent<HTMLFormElement>) {
     form.preventDefault();
     const name = String(new FormData(form.currentTarget).get("name") ?? "").trim();
-    if (!name) return setNameError("Indiquez votre prénom pour que les mariés sachent qui a photographié.");
+    if (!name) return setNameError(kindOf(event?.kind ?? "").nameNeeded);
     setJoining(true);
     setNameError(null);
     try {
@@ -210,6 +211,46 @@ export function GuestApp() {
     );
   }
 
+  if (event.state === "expired") {
+    return (
+      <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-sapin-900 px-8 text-center text-creme">
+        <Logo className="text-4xl" />
+        <p className="libelle text-or-clair">{event.title}</p>
+        <p className="max-w-[26ch] font-serif text-2xl italic">
+          Cet album est clôturé : il n&apos;est plus accessible.
+        </p>
+      </main>
+    );
+  }
+
+  if (event.state === "upcoming") {
+    const opens = event.opensAt ? new Date(event.opensAt) : null;
+    return (
+      <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-sapin-900 px-8 text-center text-creme">
+        <Logo className="text-4xl" />
+        <p className="libelle text-or-clair">{event.title}</p>
+        <p className="max-w-[26ch] font-serif text-2xl italic">
+          L&apos;album n&apos;est pas encore ouvert.
+          {opens && (
+            <>
+              {" "}
+              Rendez-vous{" "}
+              {opens.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} à{" "}
+              {opens.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.
+            </>
+          )}
+        </p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="h-12 rounded-full border border-or/60 px-7 text-sm font-medium text-or-clair active:scale-[0.98]"
+        >
+          Réessayer
+        </button>
+      </main>
+    );
+  }
+
   if (closed) {
     if (token) return <MyPhotos token={token} readOnly onCount={setCount} />;
     return (
@@ -217,7 +258,7 @@ export function GuestApp() {
         <Logo className="text-4xl" />
         <p className="libelle text-or-clair">{event.title}</p>
         <p className="max-w-[28ch] font-serif text-2xl italic">
-          L&apos;album a été dévoilé aux mariés. Il n&apos;accepte plus de nouvelles photos.
+          L&apos;album a été dévoilé. Il n&apos;accepte plus de nouvelles photos.
         </p>
       </main>
     );
@@ -231,7 +272,7 @@ export function GuestApp() {
             <Check size={44} weight="bold" />
           </span>
           <h1 className="font-serif text-5xl font-semibold leading-[1.1]">Connecté !</h1>
-          <p className="libelle text-or-fonce">Album des mariés</p>
+          <p className="libelle text-or-fonce">{kindOf(event.kind).album}</p>
           <p className="font-serif text-2xl italic">{event.title}</p>
         </div>
 
@@ -254,7 +295,7 @@ export function GuestApp() {
             role={nameError ? "alert" : undefined}
             className={`text-sm ${nameError ? "text-[#a3312c]" : "text-sapin-700"}`}
           >
-            {nameError ?? "Les mariés verront qui a pris des photos."}
+            {nameError ?? kindOf(event.kind).seenBy}
           </p>
           <button
             type="submit"

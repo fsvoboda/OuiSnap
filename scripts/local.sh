@@ -15,7 +15,11 @@ DATA="$DATA" php -r '
   $data = getenv("DATA");
   $pdo = new PDO("sqlite:$data/dev.sqlite");
   $pdo->exec(file_get_contents("database/local.sqlite.sql"));
-  $config = ["dsn" => "sqlite:$data/dev.sqlite", "storage" => "$data/storage"];
+  $config = [
+    "dsn" => "sqlite:$data/dev.sqlite",
+    "storage" => "$data/storage",
+    "admin_password_hash" => password_hash("admin", PASSWORD_DEFAULT), // mot de passe local : admin
+  ];
   file_put_contents("out/api/config.php", "<?php\nreturn " . var_export($config, true) . ";\n");
 '
 

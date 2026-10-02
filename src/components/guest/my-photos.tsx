@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowLeft, Trash, X } from "@phosphor-icons/react";
+import { ArrowLeft, Heart, Trash, X } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { PhotoImage, ZoomablePhoto } from "@/components/photo-view";
 import { api, ApiError } from "@/lib/api";
 
-type Photo = { id: number; width: number; height: number };
+type Photo = { id: number; width: number; height: number; liked: boolean };
 
 export function MyPhotos({
   token,
@@ -82,8 +82,7 @@ export function MyPhotos({
 
       {readOnly && (
         <p className="mb-5 rounded-2xl bg-sapin-800 px-5 py-4 text-sm leading-relaxed text-brume">
-          L&apos;album a été dévoilé aux mariés. Il n&apos;est plus possible
-          d&apos;ajouter ou de supprimer des photos.
+          L&apos;album a été dévoilé. Il n&apos;est plus possible d&apos;ajouter ou de supprimer des photos.
         </p>
       )}
 
@@ -125,7 +124,7 @@ export function MyPhotos({
                 type="button"
                 onClick={() => setOpen(photo)}
                 aria-label="Agrandir la photo"
-                className="block aspect-square w-full overflow-hidden rounded-lg active:scale-[0.98]"
+                className="relative block aspect-square w-full overflow-hidden rounded-lg active:scale-[0.98]"
               >
                 <PhotoImage
                   endpoint="photo"
@@ -134,6 +133,14 @@ export function MyPhotos({
                   size="thumb"
                   className="h-full w-full object-cover"
                 />
+                {photo.liked && (
+                  <Heart
+                    size={22}
+                    weight="fill"
+                    aria-label="Coup de cœur"
+                    className="absolute bottom-1.5 right-1.5 text-corail drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
+                  />
+                )}
               </button>
             </li>
           ))}
@@ -165,7 +172,13 @@ export function MyPhotos({
               id={open.id}
             />
           </div>
-          <div className="flex min-h-12 justify-center p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          <div className="flex min-h-12 flex-col items-center gap-4 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            {open.liked && (
+              <p className="flex items-center gap-2 font-serif text-xl italic text-creme">
+                <Heart size={22} weight="fill" className="text-corail" />
+                Coup de cœur pour cette photo
+              </p>
+            )}
             {!readOnly && (
               <button
                 type="button"

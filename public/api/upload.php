@@ -11,7 +11,7 @@ const THUMB_SIDE = 480;
 $guest = current_guest();
 require_open($guest);
 $max = $guest['max_photos_per_guest'] === null ? null : (int) $guest['max_photos_per_guest'];
-$limitMessage = sprintf('Vous avez atteint la limite de %d photos fixée par les mariés.', $max ?? 0);
+$limitMessage = sprintf('Vous avez atteint la limite de %d photos fixée pour cet album.', $max ?? 0);
 
 $upload = $_FILES['photo'] ?? null;
 if (!$upload || $upload['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($upload['tmp_name'])) {

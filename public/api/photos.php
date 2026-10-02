@@ -5,10 +5,16 @@ require __DIR__ . '/lib.php';
 require_post();
 
 $guest = current_guest();
-$stmt = db()->prepare('SELECT id, width, height FROM photos WHERE guest_id = ? ORDER BY id DESC');
+require_not_expired($guest);
+$stmt = db()->prepare('SELECT id, width, height, liked FROM photos WHERE guest_id = ? ORDER BY id DESC');
 $stmt->execute([$guest['id']]);
 $photos = array_map(
-    fn (array $row) => ['id' => (int) $row['id'], 'width' => (int) $row['width'], 'height' => (int) $row['height']],
+    fn (array $row) => [
+        'id' => (int) $row['id'],
+        'width' => (int) $row['width'],
+        'height' => (int) $row['height'],
+        'liked' => (bool) $row['liked'], // coup de cœur des organisateurs
+    ],
     $stmt->fetchAll()
 );
 

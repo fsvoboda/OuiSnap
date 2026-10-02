@@ -7,10 +7,15 @@ CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'mariage',
   wedding_date TEXT NULL,
+  starts_at TEXT NULL,
+  closes_at TEXT NULL,
   reveal_at TEXT NULL,
+  max_guests INTEGER NULL,
   max_photos_per_guest INTEGER NULL,
   album_token_hash TEXT NULL UNIQUE,
+  album_key TEXT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -30,6 +35,7 @@ CREATE TABLE IF NOT EXISTS photos (
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   bytes INTEGER NOT NULL,
+  liked INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

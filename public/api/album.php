@@ -20,6 +20,7 @@ $guests = array_map(fn (array $row) => ['name' => $row['name'], 'count' => (int)
 $body = [
     'ok' => true,
     'title' => $event['title'],
+    'kind' => $event['kind'],
     'revealAt' => reveal_at($event)?->format(DATE_ATOM),
     'revealed' => $revealed,
     'total' => array_sum(array_column($guests, 'count')),
@@ -30,7 +31,7 @@ $body = [
 // Une fois dévoilées, elles sont rangées par invité (ordre alphabétique), puis par ordre de prise de vue.
 if ($revealed) {
     $stmt = db()->prepare(
-        'SELECT p.id, p.width, p.height, p.guest_id, g.name
+        'SELECT p.id, p.width, p.height, p.liked, p.guest_id, g.name
          FROM photos p JOIN guests g ON g.id = p.guest_id
          WHERE p.event_id = ?
          ORDER BY g.name, g.id, p.id'
@@ -42,6 +43,7 @@ if ($revealed) {
             'width' => (int) $row['width'],
             'height' => (int) $row['height'],
             'guest' => (int) $row['guest_id'],
+            'liked' => (bool) $row['liked'],
             'name' => $row['name'],
         ],
         $stmt->fetchAll()

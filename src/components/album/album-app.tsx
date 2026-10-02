@@ -5,10 +5,12 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Logo } from "@/components/logo";
 import { LazyThumb, ZoomablePhoto } from "@/components/photo-view";
 import { api, ApiError } from "@/lib/api";
+import { kindOf } from "@/lib/kinds";
 
-type Photo = { id: number; width: number; height: number; guest: number; name: string };
+type Photo = { id: number; width: number; height: number; guest: number; name: string; liked: boolean };
 type Album = {
   title: string;
+  kind: string;
   revealAt: string | null;
   revealed: boolean;
   total: number;
@@ -93,6 +95,23 @@ export function AlbumApp() {
     };
   }, [load, waiting]);
 
+  // Coup de cœur : affiché tout de suite, annulé si le serveur refuse.
+  async function toggleLike(photo: Photo) {
+    const setLiked = (liked: boolean) =>
+      setAlbum((current) =>
+        current && {
+          ...current,
+          photos: current.photos?.map((item) => (item.id === photo.id ? { ...item, liked } : item)),
+        },
+      );
+    setLiked(!photo.liked);
+    try {
+      await api("album-like", { token, id: String(photo.id), liked: photo.liked ? "0" : "1" });
+    } catch {
+      setLiked(photo.liked);
+    }
+  }
+
   if (problem) {
     return (
       <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-6 px-8 text-center">
@@ -118,7 +137,7 @@ export function AlbumApp() {
   const header = (
     <header className="flex flex-col items-center gap-3 pt-[max(2.5rem,env(safe-area-inset-top))] text-center">
       <Logo className="text-3xl" />
-      <p className="libelle text-or-clair">Album des mariés</p>
+      <p className="libelle text-or-clair">{kindOf(album.kind).album}</p>
       <h1 className="pb-1 font-serif text-5xl leading-[1.1] md:text-6xl">{album.title}</h1>
     </header>
   );
@@ -250,9 +269,17 @@ export function AlbumApp() {
                       type="button"
                       onClick={() => setOpen(group.start + index)}
                       aria-label={`Agrandir la photo de ${photo.name}`}
-                      className="block aspect-square w-full overflow-hidden rounded-lg active:scale-[0.98]"
+                      className="relative block aspect-square w-full overflow-hidden rounded-lg active:scale-[0.98]"
                     >
                       <LazyThumb endpoint="album-photo" token={token} id={photo.id} />
+                      {photo.liked && (
+                        <Heart
+                          size={22}
+                          weight="fill"
+                          aria-label="Coup de cœur"
+                          className="absolute bottom-1.5 right-1.5 text-corail drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
+                        />
+                      )}
                     </button>
                   </li>
                 ))}
@@ -293,7 +320,16 @@ export function AlbumApp() {
             >
               <CaretLeft size={22} />
             </button>
-            <p className="min-w-20 text-center text-sm tabular-nums text-brume">
+            <button
+              type="button"
+              onClick={() => toggleLike(current)}
+              aria-pressed={current.liked}
+              aria-label={current.liked ? "Retirer le coup de cœur" : "Ajouter un coup de cœur"}
+              className={`grid size-14 place-items-center rounded-full border transition-transform active:scale-90 ${current.liked ? "border-corail text-corail" : "border-creme/30"}`}
+            >
+              <Heart size={26} weight={current.liked ? "fill" : "regular"} />
+            </button>
+            <p className="min-w-16 text-center text-sm tabular-nums text-brume">
               {open + 1} sur {photos.length}
             </p>
             <button

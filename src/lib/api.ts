@@ -1,7 +1,14 @@
 // Appels à l'API PHP servie à côté du site statique (public/api).
 
-// closed : l'album a été dévoilé aux mariés, il n'accepte plus ni ajout ni suppression.
-export type EventInfo = { title: string; maxPhotos: number | null; closed: boolean };
+// upcoming : pas encore ouvert ; open : les invités photographient ;
+// closed : album dévoilé, plus d'ajout ni de suppression ; expired : album clôturé, plus accessible.
+export type EventInfo = {
+  title: string;
+  kind: string;
+  maxPhotos: number | null;
+  state: "upcoming" | "open" | "closed" | "expired";
+  opensAt: string | null;
+};
 
 export class ApiError extends Error {
   constructor(
@@ -47,8 +54,9 @@ export async function api<T>(path: string, fields: Record<string, string | Blob>
   return data as T;
 }
 
-// "photo" : photo de l'invité connecté ; "album-photo" : photo de l'album, pour les mariés.
-export type PhotoEndpoint = "photo" | "album-photo";
+// "photo" : photo de l'invité connecté ; "album-photo" : photo de l'album, pour les mariés ;
+// "admin-photo" : n'importe quelle photo, pour l'administrateur (session par cookie, jeton vide).
+export type PhotoEndpoint = "photo" | "album-photo" | "admin-photo";
 
 export async function fetchPhoto(
   endpoint: PhotoEndpoint,

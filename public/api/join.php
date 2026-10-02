@@ -10,7 +10,8 @@ require_post();
 $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
 $event = null;
 if (preg_match('/^[A-Z0-9]{4,16}$/', $code)) {
-    $stmt = db()->prepare('SELECT id, title, max_photos_per_guest, wedding_date, reveal_at FROM events WHERE code = ?');
+    $stmt = db()->prepare('SELECT id, title, kind, max_photos_per_guest, max_guests, wedding_date, starts_at, closes_at, reveal_at
+         FROM events WHERE code = ?');
     $stmt->execute([$code]);
     $event = $stmt->fetch();
 }
@@ -42,8 +43,17 @@ if ($name === '') {
     reply(200, ['ok' => true, 'token' => null, 'name' => null, 'event' => event_payload($event), 'count' => 0]);
 }
 
-// Album déjà dévoilé : on n'accueille plus de nouvel invité.
+// Album pas encore ouvert, ou déjà clos : on n'accueille pas de nouvel invité.
 require_open($event);
+
+// Nombre maximum de photographes fixé pour cet album.
+if ($event['max_guests'] !== null) {
+    $stmt = db()->prepare('SELECT COUNT(*) FROM guests WHERE event_id = ?');
+    $stmt->execute([$eventId]);
+    if ((int) $stmt->fetchColumn() >= (int) $event['max_guests']) {
+        fail(409, 'full', 'Cet album est complet : le nombre maximum de photographes est atteint.');
+    }
+}
 
 $token = bin2hex(random_bytes(24));
 db()->prepare('INSERT INTO guests (event_id, token_hash, name) VALUES (?, ?, ?)')
