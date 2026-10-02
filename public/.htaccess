@@ -1,0 +1,4 @@
+# Force le HTTPS (hébergement OVH) : indispensable pour l'accès à l'appareil photo.
+RewriteEngine On
+RewriteCond %{SERVER_PORT} 80
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
