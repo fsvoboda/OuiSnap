@@ -362,6 +362,7 @@ export function GuestApp() {
 
   return (
     <Camera
+      title={event.title}
       remaining={remaining}
       counter={counter}
       status={status}

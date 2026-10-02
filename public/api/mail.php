@@ -28,6 +28,40 @@ function album_label(array $event): string
     ][$event['kind']] ?? "Album de l'événement";
 }
 
+// Tournures propres à chaque nature d'événement. « autre » reste neutre : ses entrées sont vides,
+// et les messages retombent alors sur une formulation générale.
+const KIND_TEXTS = [
+    'mariage' => [
+        'thanks' => "Merci d'avance de votre contribution aux souvenirs de ce grand jour.",
+        'guest_reveal' => 'Les mariés découvrent en ce moment leur journée à travers vos yeux.',
+        'open_heading' => 'Votre album de mariage est ouvert',
+        'open_extra' => "Profitez de votre journée : vos invités s'occupent des souvenirs.",
+        'reveal_heading' => 'Votre album de mariage est dévoilé',
+        'reveal_extra' => 'Revivez votre mariage à travers le regard de vos invités.',
+    ],
+    'bapteme' => [
+        'thanks' => "Merci d'avance de votre contribution aux souvenirs de ce baptême.",
+        'guest_reveal' => 'La famille découvre en ce moment ce baptême à travers vos yeux.',
+        'open_heading' => "L'album du baptême est ouvert",
+        'open_extra' => "Profitez de la cérémonie : vos invités s'occupent des souvenirs.",
+        'reveal_heading' => "L'album du baptême est dévoilé",
+        'reveal_extra' => 'Revivez ce baptême à travers le regard de vos proches.',
+    ],
+    'anniversaire' => [
+        'thanks' => "Merci d'avance de votre contribution aux souvenirs de cet anniversaire.",
+        'guest_reveal' => 'Les organisateurs découvrent en ce moment la fête à travers vos yeux.',
+        'open_heading' => "L'album d'anniversaire est ouvert",
+        'open_extra' => "Profitez de la fête : vos invités s'occupent des souvenirs.",
+        'reveal_heading' => "L'album d'anniversaire est dévoilé",
+        'reveal_extra' => 'Revivez cet anniversaire à travers le regard de vos invités.',
+    ],
+];
+
+function kind_text(array $event, string $key, ?string $neutral = null): ?string
+{
+    return KIND_TEXTS[$event['kind'] ?? ''][$key] ?? $neutral;
+}
+
 // Lien personnel : il rouvre la session de l'invité, même sur un autre appareil.
 function guest_link(array $event, ?string $token): string
 {
@@ -90,10 +124,11 @@ function organizer_open_mail(array $event): array
     return [
         'subject' => "« {$event['title']} » : votre album est ouvert",
         'label' => album_label($event),
-        'heading' => 'Votre album est ouvert',
+        'heading' => kind_text($event, 'open_heading', 'Votre album est ouvert'),
         'paragraphs' => array_values(array_filter([
             organizer_greeting($event),
             "L'album « {$event['title']} » est ouvert : vos invités peuvent photographier dès maintenant.",
+            kind_text($event, 'open_extra'),
             $reveal
                 ? 'Les photos resteront une surprise jusqu\'au ' . french_date($reveal)
                     . ". D'ici là, vous pouvez suivre qui photographie, et combien."
@@ -118,7 +153,7 @@ function organizer_reveal_mail(array $event, int $photos, int $guests): array
     return [
         'subject' => "« {$event['title']} » : votre album est dévoilé",
         'label' => album_label($event),
-        'heading' => 'Votre album est dévoilé',
+        'heading' => kind_text($event, 'reveal_heading', 'Votre album est dévoilé'),
         'paragraphs' => array_values(array_filter([
             organizer_greeting($event),
             $photos === 0
@@ -126,6 +161,7 @@ function organizer_reveal_mail(array $event, int $photos, int $guests): array
                 : "L'album « {$event['title']} » est dévoilé : $photos photo" . ($photos > 1 ? 's' : '')
                     . " prise" . ($photos > 1 ? 's' : '') . " par $guests photographe" . ($guests > 1 ? 's' : '')
                     . ' vous ' . ($photos > 1 ? 'attendent' : 'attend') . '.',
+            $photos === 0 ? null : kind_text($event, 'reveal_extra'),
             'Vous pouvez les parcourir, poser un coup de cœur sur vos préférées et tout télécharger.',
             $closes
                 ? "L'album reste accessible jusqu'au " . french_date($closes, false) . ' : pensez à le télécharger avant.'
@@ -149,7 +185,7 @@ function welcome_mail(array $event, string $name, string $token): array
         'heading' => "Bienvenue, $name !",
         'paragraphs' => [
             "Vous avez rejoint l'album « {$event['title']} »" . organizer_possessive($event)
-                . ". Merci d'avance de votre contribution à ce souvenir unique.",
+                . '. ' . kind_text($event, 'thanks', "Merci d'avance de votre contribution à ce souvenir unique."),
             'Vous serez prévenu par e-mail dès que vos photos seront dévoilées ' . hosts_label($event) . '.',
         ],
         'highlight' => $max === null
@@ -174,13 +210,14 @@ function reveal_mail(array $event, array $guest): array
         'subject' => "« {$event['title']} » : l'album est dévoilé",
         'label' => album_label($event),
         'heading' => "L'album est dévoilé",
-        'paragraphs' => [
+        'paragraphs' => array_values(array_filter([
             "Bonjour {$guest['name']},",
             "L'album « {$event['title']} » vient d'être dévoilé " . hosts_label($event) . '. '
                 . ($count > 1 ? "Vos $count photos en font partie" : 'Votre photo en fait partie')
                 . " : merci d'avoir photographié !",
+            kind_text($event, 'guest_reveal'),
             'Vous pouvez revoir vos photos et découvrir celles qui recevront un coup de cœur.',
-        ],
+        ])),
         'highlight' => null,
         'image' => null,
         'button' => ['label' => 'Revoir mes photos', 'url' => guest_link($event, $guest['link_token'] ?? null)],

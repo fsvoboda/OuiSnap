@@ -2,7 +2,7 @@
 
 import { Camera as CameraIcon, CameraRotate, Images, SquaresFour } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/logo";
 import { toJpeg } from "@/lib/image";
 import { usePinch } from "@/lib/pinch";
@@ -10,15 +10,8 @@ import { playShutter } from "@/lib/shutter";
 
 type Facing = "environment" | "user";
 
-// Heure affichée dans la pastille, comme sur les écrans du teaser.
-function subscribeClock(notify: () => void) {
-  const timer = setInterval(notify, 15_000);
-  return () => clearInterval(timer);
-}
-const readClock = () =>
-  new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-
 export function Camera({
+  title,
   remaining,
   counter,
   status,
@@ -27,6 +20,7 @@ export function Camera({
   onShots,
   onOpenPhotos,
 }: {
+  title: string; // nom de l'événement, affiché à côté du logo
   remaining: number | null; // null = illimité
   counter: string;
   status: string | null;
@@ -46,7 +40,6 @@ export function Camera({
   const [aspect, setAspect] = useState(9 / 16);
   const zoomTrack = useRef<{ track: MediaStreamTrack; base: number; max: number } | null>(null);
   const pinchBase = useRef(1);
-  const clock = useSyncExternalStore(subscribeClock, readClock, () => "");
   const full = remaining !== null && remaining <= 0;
 
   useEffect(() => {
@@ -197,9 +190,9 @@ export function Camera({
         )}
 
         <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))]">
-          <div className="flex items-center gap-3 rounded-full bg-sapin-950/75 px-4 py-1.5">
-            <Logo className="text-lg" />
-            <span className="text-sm font-medium tabular-nums">{clock}</span>
+          <div className="flex min-w-0 max-w-[calc(100%-3.75rem)] items-center gap-3 rounded-full bg-sapin-950/75 px-4 py-1.5">
+            <Logo className="shrink-0 text-lg" />
+            <span className="truncate text-sm font-medium">{title}</span>
           </div>
           {live && (
             <button
@@ -209,7 +202,7 @@ export function Camera({
                 setZoom(1);
                 setFacing((value) => (value === "user" ? "environment" : "user"));
               }}
-              className="grid size-11 place-items-center rounded-full bg-sapin-950/75 active:scale-95"
+              className="grid size-11 shrink-0 place-items-center rounded-full bg-sapin-950/75 active:scale-95"
             >
               <CameraRotate size={22} />
             </button>
