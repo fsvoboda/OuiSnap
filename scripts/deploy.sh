@@ -19,7 +19,7 @@ set -a
 source "$CONFIG"
 set +a
 
-for name in OVH_FTP_HOST OVH_FTP_USER OVH_FTP_PASSWORD OVH_REMOTE_DIR DB_HOST DB_NAME DB_USER DB_PASSWORD ADMIN_PASSWORD; do
+for name in OVH_FTP_HOST OVH_FTP_USER OVH_FTP_PASSWORD OVH_REMOTE_DIR DB_HOST DB_NAME DB_USER DB_PASSWORD ADMIN_PASSWORD OVH_SITE_URL ADMIN_EMAILS MAIL_FROM; do
   if [[ -z "${!name:-}" ]]; then
     echo "Valeur manquante dans $CONFIG : $name" >&2
     exit 1
@@ -42,11 +42,23 @@ if [[ "$PROTOCOL" != "sftp" && "$PROTOCOL" != "ftp" ]]; then
   exit 1
 fi
 
+# Chaque adresse de ADMIN_EMAILS doit être bien formée et ne pas être une adresse d'exemple.
+php -r '
+  foreach (array_filter(array_map("trim", explode(",", getenv("ADMIN_EMAILS")))) as $email) {
+    $domain = strtolower((string) substr(strrchr($email, "@") ?: "", 1));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || in_array($domain, ["exemple.fr", "example.com"], true)) {
+      fwrite(STDERR, "ADMIN_EMAILS : adresse invalide ou factice : $email\n");
+      exit(1);
+    }
+  }
+' || { echo "Corrige ADMIN_EMAILS dans $CONFIG (a@domaine.fr,b@domaine.fr, adresses réelles)." >&2; exit 1; }
+
 command -v lftp >/dev/null || { echo "lftp est requis (brew install lftp)." >&2; exit 1; }
 
 npm run build
 
 # Identifiants MySQL et empreinte du mot de passe admin : écrits dans la copie compilée seulement.
+# L'empreinte est celle du mot de passe initial : un mot de passe choisi par « Mot de passe oublié » (table settings) la remplace.
 php -r '
   $config = [
     "host" => getenv("DB_HOST"),
@@ -55,6 +67,7 @@ php -r '
     "user" => getenv("DB_USER"),
     "password" => getenv("DB_PASSWORD"),
     "admin_password_hash" => password_hash(getenv("ADMIN_PASSWORD"), PASSWORD_DEFAULT),
+    "admin_emails" => array_values(array_filter(array_map("trim", explode(",", getenv("ADMIN_EMAILS") ?: "")))),
     "site_url" => getenv("OVH_SITE_URL") ?: "",
     "mail_from" => getenv("MAIL_FROM") ?: "",
   ];

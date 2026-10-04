@@ -22,7 +22,7 @@ if ($fromIp >= MAX_FAILURES_PER_IP || $total >= MAX_FAILURES_TOTAL) {
     fail(429, 'locked', "Trop d'essais. Réessayez dans " . WINDOW_MINUTES . ' minutes.');
 }
 
-$hash = config()['admin_password_hash'] ?? '';
+$hash = admin_password()['hash'];
 if ($hash === '' || !password_verify((string) ($_POST['password'] ?? ''), $hash)) {
     db()->prepare('INSERT INTO admin_login_attempts (ip, failed_at) VALUES (?, ?)')
         ->execute([$ip, gmdate('Y-m-d H:i:s')]);
@@ -33,5 +33,5 @@ if ($hash === '' || !password_verify((string) ($_POST['password'] ?? ''), $hash)
 db()->prepare('DELETE FROM admin_login_attempts WHERE ip = ?')->execute([$ip]);
 start_admin_session();
 session_regenerate_id(true);
-$_SESSION['admin'] = true;
+$_SESSION['admin'] = admin_password()['version'];
 reply(200, ['ok' => true]);

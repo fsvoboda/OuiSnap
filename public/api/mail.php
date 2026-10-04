@@ -1,5 +1,6 @@
 <?php
 // Messages envoyés aux photographes : bienvenue à l'inscription, puis annonce de la révélation.
+// Et le lien de réinitialisation du mot de passe, envoyé à l'administrateur.
 // Chaque message part en deux versions : HTML aux couleurs de OuiSnap, et texte brut de secours.
 declare(strict_types=1);
 
@@ -175,6 +176,26 @@ function organizer_reveal_mail(array $event, int $photos, int $guests): array
     ];
 }
 
+// Message envoyé à l'administrateur qui a oublié son mot de passe.
+function admin_reset_mail(string $url, DateTimeImmutable $expires): array
+{
+    return [
+        'subject' => "OuiSnap : réinitialisation du mot de passe d'administration",
+        'label' => 'Administration',
+        'heading' => 'Choisissez un nouveau mot de passe',
+        'paragraphs' => [
+            "Une réinitialisation du mot de passe de l'administration OuiSnap vient d'être demandée.",
+            'Ce lien ne peut servir qu\'une fois et reste valable une heure, jusqu\'au ' . french_date($expires) . '.',
+        ],
+        'highlight' => null,
+        'image' => null,
+        'button' => ['label' => 'Choisir un nouveau mot de passe', 'url' => $url],
+        'plain_link' => true,
+        'note' => "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : le mot de passe actuel reste valable.",
+        'footer' => "Message envoyé aux adresses de l'administrateur de OuiSnap.",
+    ];
+}
+
 // Message envoyé à l'inscription d'un photographe qui a laissé son adresse.
 function welcome_mail(array $event, string $name, string $token): array
 {
@@ -271,6 +292,12 @@ function mail_html(array $mail): string
             . $e($mail['image']['caption']) . '</p></td></tr></table>'
         : '';
     $url = $e($mail['button']['url']);
+    // Adresse écrite en toutes lettres sous le bouton, pour les messageries qui neutralisent les boutons.
+    $plainLink = ($mail['plain_link'] ?? null)
+        ? '<p style="margin:20px 0 0;font:12px/1.6 ' . $sans . ';color:#6b7a70;text-align:center;">'
+            . 'Si le bouton ne fonctionne pas, copiez cette adresse dans votre navigateur :<br>'
+            . '<a href="' . $url . '" style="color:#6b7a70;word-break:break-all;">' . $url . '</a></p>'
+        : '';
 
     return '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'
         . '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -294,6 +321,7 @@ function mail_html(array $mail): string
         . '<td align="center" style="background:#cba660;border-radius:999px;">'
         . '<a href="' . $url . '" style="display:inline-block;padding:15px 34px;font:bold 15px/1 ' . $sans . ';'
         . 'color:#121a16;text-decoration:none;">' . $e($mail['button']['label']) . '</a></td></tr></table>'
+        . $plainLink
         . $note
         . '</td></tr>'
         . '<tr><td align="center" style="padding:24px 20px 0;font:12px/1.6 ' . $sans . ';color:#6b7a70;">'

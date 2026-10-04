@@ -9,6 +9,7 @@ import { uploadEventQr } from "@/lib/qr";
 import { AlbumView } from "./album-view";
 import { EventForm } from "./event-form";
 import { EventLinks } from "./event-links";
+import { PasswordReset } from "./password-reset";
 import { buttonClass, formatDate, formatDay, inputClass, type AdminEvent } from "./types";
 
 type View =
@@ -35,6 +36,9 @@ export function AdminApp() {
   const [loggingIn, setLoggingIn] = useState(false);
   const [removing, setRemoving] = useState<number | null>(null); // album dont la suppression attend confirmation
   const [deleting, setDeleting] = useState(false);
+  const [reset, setReset] = useState<string | null>(null); // jeton du lien « mot de passe oublié » reçu par e-mail
+  const [forgot, setForgot] = useState<"idle" | "sending" | "sent">("idle");
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function remove(event: AdminEvent) {
     setDeleting(true);
@@ -68,8 +72,24 @@ export function AdminApp() {
   }, []);
 
   useEffect(() => {
-    const first = setTimeout(load, 0);
-    return () => clearTimeout(first);
+    // Le jeton du lien (#reset=<jeton>) est retiré de la barre d'adresse dès qu'il est lu.
+    const readToken = () => {
+      const token = new URLSearchParams(window.location.hash.slice(1)).get("reset");
+      if (token !== null) {
+        setReset(token);
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    };
+    const first = setTimeout(() => {
+      readToken();
+      load();
+    }, 0);
+    // Page déjà ouverte : le clic sur le lien du mail ne recharge pas, seul le fragment change.
+    window.addEventListener("hashchange", readToken);
+    return () => {
+      clearTimeout(first);
+      window.removeEventListener("hashchange", readToken);
+    };
   }, [load]);
 
   async function login(form: React.FormEvent<HTMLFormElement>) {
@@ -80,6 +100,7 @@ export function AdminApp() {
       await api("admin-login", {
         password: String(new FormData(form.currentTarget).get("password") ?? ""),
       });
+      setNotice(null);
       await load();
     } catch (reason) {
       setError((reason as ApiError).message);
@@ -88,11 +109,43 @@ export function AdminApp() {
     }
   }
 
+  async function forgotPassword() {
+    setForgot("sending");
+    setError(null);
+    try {
+      const result = await api<{ sentTo: string[] }>("admin-forgot", {});
+      setNotice(
+        `Un lien de réinitialisation vient d'être envoyé à ${result.sentTo.join(" et ")}. Il est valable une heure. Pensez à regarder dans les courriers indésirables.`,
+      );
+      setForgot("sent");
+    } catch (reason) {
+      setError((reason as ApiError).message);
+      setForgot("idle");
+    }
+  }
+
   async function logout() {
     await api("admin-logout", {}).catch(() => {});
     setEvents([]);
     setView({ kind: "list" });
     setAuth("out");
+  }
+
+  if (reset !== null) {
+    return (
+      <PasswordReset
+        token={reset}
+        onBack={() => setReset(null)}
+        onDone={() => {
+          setReset(null);
+          setEvents([]);
+          setView({ kind: "list" });
+          setAuth("out");
+          setError(null);
+          setNotice("Mot de passe modifié. Connectez-vous avec le nouveau.");
+        }}
+      />
+    );
   }
 
   if (auth === "checking" && !error) {
@@ -113,6 +166,11 @@ export function AdminApp() {
           <p className="libelle text-or-clair">Administration</p>
         </div>
         <form onSubmit={login} className="flex w-full max-w-sm flex-col gap-2">
+          {notice && (
+            <p role="status" className="text-sm text-or-clair">
+              {notice}
+            </p>
+          )}
           <label htmlFor="password" className="libelle text-brume">
             Mot de passe
           </label>
@@ -132,6 +190,14 @@ export function AdminApp() {
           )}
           <button type="submit" disabled={loggingIn} className={`${buttonClass} mt-3 bg-or text-sapin-950`}>
             {loggingIn ? "Connexion…" : "Se connecter"}
+          </button>
+          <button
+            type="button"
+            onClick={forgotPassword}
+            disabled={forgot !== "idle"}
+            className="min-h-11 text-sm text-or-clair underline underline-offset-4 disabled:opacity-60"
+          >
+            {forgot === "sending" ? "Envoi…" : "Mot de passe oublié ?"}
           </button>
         </form>
       </main>

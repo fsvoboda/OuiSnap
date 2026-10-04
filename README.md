@@ -58,13 +58,13 @@ npm run migrate   # applique sur la base OVH les fichiers database/NNN_*.sql man
 npm run deploy    # compile et envoie le site chez OVH (ajouter -- --dry-run pour simuler)
 ```
 
-`npm run local` ouvre l'appli sur http://localhost:8000/e/?c=DEMO2026 et l'administration sur http://localhost:8000/admin/ (mot de passe local : `admin`). Les données de test vivent dans `.local/` ; les e-mails n'y sont pas envoyés mais écrits dans `.local/mails.log`.
+`npm run local` ouvre l'appli sur http://localhost:8000/e/?c=DEMO2026 et l'administration sur http://localhost:8000/admin/ (mot de passe local : `admin`). Le lien du « Mot de passe oublié ? » se lit dans `.local/mails.log`. Les données de test vivent dans `.local/` ; les e-mails n'y sont pas envoyés mais écrits dans `.local/mails.log`.
 
 ## Mise en ligne
 
 Les accès FTP et MySQL et le mot de passe de l'administration sont dans `.env.deploy`, non versionné (modèle : `deploy.env.example`).
 
-1. `npm run migrate` si un nouveau fichier SQL a été ajouté. La base n'étant joignable que depuis l'hébergement, la commande dépose un script PHP temporaire, l'appelle une fois, puis le supprime.
+1. `npm run migrate` si un nouveau fichier SQL a été ajouté. La migration `014_password_reset.sql` (mot de passe oublié) doit passer **avant** le déploiement : sans ses tables, l'administration refuse toute connexion. La base n'étant joignable que depuis l'hébergement, la commande dépose un script PHP temporaire, l'appelle une fois, puis le supprime.
 2. `npm run deploy`. Le script génère `api/config.php` et envoie `out/` sans rien supprimer sur le serveur.
 
 ## Production
@@ -72,6 +72,7 @@ Les accès FTP et MySQL et le mot de passe de l'administration sont dans `.env.d
 - **Adresse** : `https://ouisnap.pourunouieternel.fr`. Elle figure dans `OVH_SITE_URL` (`.env.deploy`, utilisée dans les e-mails) et dans `SITE_URL` (`src/app/layout.tsx`, utilisée pour le référencement). Les QR codes imprimés la contiennent : la changer les rendrait inutilisables.
 - **Sécurité** : HTTPS forcé et mémorisé par le navigateur (HSTS), clés des liens privés jamais transmises à un autre site (`Referrer-Policy`), fichiers internes de l'API inaccessibles depuis le web, erreurs PHP jamais affichées.
 - **Administration** : après 5 mots de passe erronés depuis une même adresse en 15 minutes, la connexion est bloquée pendant ce délai.
+- **Mot de passe oublié** : le bouton de l'écran de connexion envoie un lien aux adresses de `ADMIN_EMAILS` (`.env.deploy`, ainsi que `OVH_SITE_URL`, obligatoire). Le lien (`/admin/#reset=<jeton>`, le jeton étant dans le fragment pour n'atteindre ni les journaux du serveur ni le Referer) est valable une heure et ne sert qu'une fois ; un nouveau lien annule les précédents (seulement si un envoi a réussi) ; 3 demandes par heure et 10 par jour au maximum. Le mot de passe choisi est gardé dans la base (table `settings`) et prime sur `ADMIN_PASSWORD`, qui n'est plus que le mot de passe initial ; le changer déconnecte les sessions ouvertes. Secours si les e-mails ne partent pas : supprimer la ligne `admin_password_hash` de la table `settings`, ce qui rend la main à `ADMIN_PASSWORD`.
 - **Référencement** : seule la page vitrine est ouverte aux moteurs de recherche (`robots.txt`).
 - **Tâche planifiée** : pour que les e-mails d'ouverture et de révélation partent même si personne ne visite le site, créer dans l'espace client OVH une tâche horaire sur `ouisnap/api/cron.php`.
 - **Téléchargement ZIP** : l'archive est écrite au fil de l'eau, sans fichier temporaire. Essai du 2026-10-03 sur le serveur : 1 000 photos (651 Mo) téléchargées en 64 secondes. L'hébergement refusant les réponses qui annoncent une très grosse taille, celle-ci n'est annoncée qu'en dessous de 150 Mo. Limite du format : 4 Go par archive.

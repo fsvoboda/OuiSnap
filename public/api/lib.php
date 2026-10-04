@@ -296,12 +296,47 @@ function start_admin_session(): void
     session_start();
 }
 
+// Adresses qui reçoivent le lien de réinitialisation du mot de passe (api/config.php, clé admin_emails).
+function admin_emails(): array
+{
+    $emails = config()['admin_emails'] ?? null;
+    return is_array($emails) && $emails !== [] ? array_values($emails) : [];
+}
+
+// Mot de passe d'administration : celui choisi via « Mot de passe oublié » (table settings) prime sur celui de la config.
+// « version » est liée à la session : changer de mot de passe déconnecte toutes les sessions ouvertes.
+// Pas de try/catch : si la table manque, l'accès est refusé plutôt que rabattu sur la config.
+function admin_password(): array
+{
+    static $password = null;
+    if ($password === null) {
+        $stmt = db()->prepare('SELECT value FROM settings WHERE name = ?');
+        $stmt->execute(['admin_password_hash']);
+        $value = (string) $stmt->fetchColumn();
+        $password = $value !== ''
+            ? ['hash' => $value, 'version' => hash('sha256', $value)]
+            : ['hash' => config()['admin_password_hash'] ?? '', 'version' => 'config'];
+    }
+    return $password;
+}
+
 function require_admin(): void
 {
     start_admin_session();
-    if (empty($_SESSION['admin'])) {
+    $session = $_SESSION['admin'] ?? null;
+    if (!is_string($session) || !hash_equals(admin_password()['version'], $session)) {
         fail(401, 'auth', 'Connexion requise.');
     }
+}
+
+// « z…@gmail.com » : de quoi reconnaître l'adresse sans la divulguer.
+function mask_email(string $email): string
+{
+    $at = strrpos($email, '@');
+    if ($at === false || $at === 0) {
+        return '…';
+    }
+    return mb_substr($email, 0, 1) . '…' . substr($email, $at);
 }
 
 // Album vu par l'administrateur : réglages, liens et compteurs.
