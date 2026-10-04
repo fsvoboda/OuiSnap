@@ -173,7 +173,7 @@ export function AlbumApp() {
             </>
           ) : (
             <p className="font-serif text-2xl italic leading-snug">
-              Votre album se dévoilera le lendemain du mariage, à midi.
+              Votre album se dévoilera le lendemain de l&apos;événement, à midi.
             </p>
           )}
           <p className="max-w-[36ch] text-sm leading-relaxed text-sapin-700">
@@ -259,7 +259,7 @@ export function AlbumApp() {
 
       {photos.length === 0 ? (
         <p className="py-10 text-center font-serif text-2xl italic">
-          Aucune photo n&apos;a été envoyée pour ce mariage.
+          Aucune photo n&apos;a été envoyée pour cet événement.
         </p>
       ) : (
         <div className="flex flex-col gap-10">

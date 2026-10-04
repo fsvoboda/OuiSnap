@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { GuestApp } from "@/components/guest/guest-app";
 
 export const metadata: Metadata = {
-  title: "OuiSnap, l'album des mariés",
+  title: "OuiSnap, l'album de l'événement",
   robots: { index: false },
 };
 
