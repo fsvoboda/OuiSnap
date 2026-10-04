@@ -48,3 +48,7 @@ next-env.d.ts
 
 # captures et instantanés des tests Playwright
 /.playwright-mcp/
+
+# configuration locale des serveurs MCP et sources de la vidéo de présentation
+/.mcp.json
+/video/
