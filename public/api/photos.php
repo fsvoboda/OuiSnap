@@ -1,12 +1,12 @@
 <?php
-// Liste des photos de l'invité connecté, la plus récente d'abord.
+// Liste des photos de l'invité connecté, dans l'ordre de prise de vue.
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
 require_post();
 
 $guest = current_guest();
 require_not_expired($guest);
-$stmt = db()->prepare('SELECT id, width, height, liked FROM photos WHERE guest_id = ? ORDER BY id DESC');
+$stmt = db()->prepare('SELECT id, width, height, liked FROM photos WHERE guest_id = ? ORDER BY id');
 $stmt->execute([$guest['id']]);
 $photos = array_map(
     fn (array $row) => [

@@ -45,3 +45,6 @@ next-env.d.ts
 
 # base et photos de test locales
 /.local/
+
+# captures et instantanés des tests Playwright
+/.playwright-mcp/
