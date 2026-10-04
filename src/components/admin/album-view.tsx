@@ -1,12 +1,12 @@
 "use client";
 
-import { ArrowLeft, CaretLeft, CaretRight, Trash, X } from "@phosphor-icons/react";
+import { ArrowLeft, CaretLeft, CaretRight, Heart, Trash, X } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { LazyThumb, ZoomablePhoto } from "@/components/photo-view";
 import { api, ApiError } from "@/lib/api";
 import { buttonClass, type AdminEvent } from "./types";
 
-type Photo = { id: number; width: number; height: number; guest: number; name: string };
+type Photo = { id: number; width: number; height: number; guest: number; liked: boolean; name: string };
 
 // Toutes les photos d'un album, consultables et supprimables à tout moment par l'administrateur.
 export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => void }) {
@@ -108,9 +108,17 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
                   type="button"
                   onClick={() => show(group.start + index)}
                   aria-label={`Agrandir la photo de ${photo.name}`}
-                  className="block aspect-square w-full overflow-hidden rounded-lg active:scale-[0.98]"
+                  className="relative block aspect-square w-full overflow-hidden rounded-lg active:scale-[0.98]"
                 >
                   <LazyThumb endpoint="admin-photo" token="" id={photo.id} />
+                  {photo.liked && (
+                    <Heart
+                      size={22}
+                      weight="fill"
+                      aria-label="Coup de cœur"
+                      className="absolute bottom-1.5 right-1.5 text-corail drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
+                    />
+                  )}
                 </button>
               </li>
             ))}
@@ -139,6 +147,12 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
           <div className="min-h-0 flex-1 px-3">
             <ZoomablePhoto key={current.id} endpoint="admin-photo" token="" id={current.id} />
           </div>
+          {current.liked && (
+            <p className="flex items-center justify-center gap-2 px-4 pt-4 font-serif text-xl italic">
+              <Heart size={22} weight="fill" className="text-corail" />
+              Coup de cœur des organisateurs
+            </p>
+          )}
           <div className="flex flex-wrap items-center justify-center gap-4 p-4">
             <button
               type="button"
