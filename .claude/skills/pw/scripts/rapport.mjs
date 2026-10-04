@@ -1,4 +1,4 @@
-// Bilan des tests pw (Playwright) de OuiSnap : fabrique .playwright-mcp/rapport-pw.html à partir de resultats.json.
+// Bilan des tests Playwright de OuiSnap : fabrique .playwright-mcp/rapport-pw.html à partir de resultats.json.
 // Chaque script de test enregistre son résultat dans .playwright-mcp/dernier-<test>.json (avec date et heures). Ensuite :
 //   node .claude/skills/pw/scripts/rapport.mjs ajouter <mariage|mot-de-passe|types>   ajoute ce passage à l'historique
 //   node .claude/skills/pw/scripts/rapport.mjs                                        régénère seulement la page

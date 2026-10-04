@@ -1,11 +1,11 @@
 ---
 name: pw
-description: Joue les tests de bout en bout Playwright (« pw ») de OuiSnap sur le serveur local, enregistre les résultats, régénère la page de bilan « Tests Playwright » et la republie pour qu'elle s'affiche dans VS Code. À utiliser dès que Franck parle de pw, de Playwright, de tests de bout en bout, de « lancer / relancer / passer les tests », de « vérifier que rien n'est cassé » après un changement, du bilan des tests, ou demande d'ajouter une étape ou un nouveau test pw. À utiliser aussi de soi-même avant une mise en ligne qui touche aux parcours admin, organisateurs ou invités.
+description: Joue les tests de bout en bout Playwright de OuiSnap (Franck dit « pw ») sur le serveur local, enregistre les résultats, régénère la page de bilan « Tests Playwright » et la republie pour qu'elle s'affiche dans VS Code. À utiliser dès que Franck parle de pw, de Playwright, de tests de bout en bout, de « lancer / relancer / passer les tests », de « vérifier que rien n'est cassé » après un changement, du bilan des tests, ou demande d'ajouter une étape ou un nouveau test Playwright. À utiliser aussi de soi-même avant une mise en ligne qui touche aux parcours admin, organisateurs ou invités.
 ---
 
-# Tests pw de OuiSnap
+# Tests Playwright de OuiSnap
 
-« pw » est le mot de Franck pour Playwright. Les tests jouent de vrais parcours dans un navigateur, contre le serveur local, et finissent toujours par la page de bilan : c'est elle que Franck regarde, pas le journal de la conversation.
+« pw » est le mot de Franck pour Playwright : le comprendre quand il le dit, mais ne jamais l'employer soi-même. Dans les réponses, les documents et la page de bilan, écrire « Playwright » en toutes lettres (consigne du 4 octobre 2026). Les tests jouent de vrais parcours dans un navigateur, contre le serveur local, et finissent toujours par la page de bilan : c'est elle que Franck regarde, pas le journal de la conversation.
 
 Franck est photographe, pas développeur. Lui rendre compte en termes de ce que voient les utilisateurs (« l'invité voit ses photos dans l'ordre »), en français et en le tutoyant.
 

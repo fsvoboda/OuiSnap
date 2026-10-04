@@ -1,91 +1,121 @@
 # OuiSnap
 
-L'appli photo des invités de mariage : ils scannent le QR code posé sur leur table, photographient toute la journée, et les mariés reçoivent tout dans un album.
+OuiSnap est l'appli photo des invités d'un événement. Les invités scannent un QR code posé sur leur table, photographient toute la journée, et les organisateurs découvrent l'album le lendemain. Personne n'installe rien ni ne crée de compte.
 
-Production : https://ouisnap.pourunouieternel.fr (sous-domaine retenu comme adresse de production)
+C'est le service de PourUnOuiEternel, photographe de mariage : OuiSnap complète le reportage du photographe avec tous les regards des proches.
+
+Adresse du site : https://ouisnap.pourunouieternel.fr
+
+Ce document décrit ce que fait OuiSnap et selon quelles règles. Les processus détaillés sont dans [docs/PDD.md](docs/PDD.md). La technique est dans [docs/SDD.md](docs/SDD.md).
+
+## Qui fait quoi
+
+| Qui | Ce qu'il peut faire |
+|---|---|
+| **Visiteur de la vitrine** | Découvre OuiSnap sur la page d'accueil (vidéo de présentation, captures de l'appli) et envoie une demande d'album : nom, e-mail, type et date de l'événement, message facultatif. |
+| **Administrateur** (Franck) | Se connecte à `/admin/` avec un mot de passe. Crée et règle les événements, imprime les cartes QR des tables, récupère le lien de l'album des organisateurs, voit toutes les photos à tout moment, supprime des photos ou un événement entier. |
+| **Organisateurs** (mariés, famille, hôtes) | Reçoivent un lien privé vers leur album. Avant la révélation, ils voient qui a photographié et combien. Après, ils parcourent les photos, posent des coups de cœur et téléchargent tout en un fichier ZIP. |
+| **Invités / photographes** | Scannent le QR code, donnent leur prénom (et leur e-mail s'ils veulent), photographient ou importent des photos, revoient et suppriment leurs propres photos tant que l'album est ouvert. |
+
+## La vie d'un album
+
+```mermaid
+stateDiagram-v2
+    [*] --> AVenir: l'admin crée l'événement
+    AVenir --> Ouvert: date de début
+    Ouvert --> Revele: date de révélation
+    Revele --> Cloture: jour de clôture passé
+    AVenir --> Cloture: jour de clôture passé
+    Ouvert --> Cloture: jour de clôture passé
+    Cloture --> [*]: suppression par l'admin
+    Revele --> [*]: suppression par l'admin
+```
+
+1. **Création.** Franck crée l'événement dans l'administration : type, nom de l'album, nom et e-mail des organisateurs, dates, limites. Le QR code et le lien privé des organisateurs sont créés avec lui.
+2. **À venir.** Avant la date de début, le QR code répond « L'album n'est pas encore ouvert » et indique le jour et l'heure d'ouverture.
+3. **Ouverture.** À la date de début, les invités peuvent photographier. Les organisateurs reçoivent un e-mail avec le QR code et le lien de leur album.
+4. **Prise de photos.** Les invités scannent, se présentent, photographient. Les organisateurs suivent les compteurs, mais ne voient aucune image.
+5. **Révélation.** À la date de révélation, les envois s'arrêtent et l'album se dévoile aux organisateurs. Les photographes qui ont laissé leur e-mail et envoyé au moins une photo sont prévenus.
+6. **Clôture.** Le jour de clôture passé, l'album n'est plus accessible, ni aux organisateurs ni aux invités. Les photos restent sur le serveur.
+7. **Suppression.** Franck supprime l'album à la main. Ses photos sont alors effacées du serveur.
+
+## Les règles du produit
+
+### Types d'événement
+
+Un événement est un mariage, un baptême, un anniversaire ou un autre événement. Les textes de l'appli et des e-mails s'y adaptent (« Album des mariés », « Album du baptême », « Album d'anniversaire », « Album de l'événement » ; « les mariés », « la famille », « les organisateurs »). Les tournures des e-mails sont aussi personnalisées pour le mariage, le baptême et l'anniversaire ; « Autre événement » reste neutre.
+
+### Dates
+
+- **Début** : pas d'envoi avant.
+- **Révélation** : fin des envois, les organisateurs découvrent les photos. Proposée par défaut le lendemain du début à 12h00.
+- **Clôture** : un jour, sans heure, proposé par défaut deux semaines après le début. L'album reste accessible jusqu'à la fin de ce jour. Elle doit suivre la révélation. Vide : l'album n'est jamais clôturé.
+- La révélation doit suivre le début.
+
+### Limites
+
+- Nombre de photographes et nombre de photos par photographe : réglables par événement, entre 1 et 65 535. Vides, ils sont illimités.
+- Un invité qui laisse son e-mail reçoit 5 photos de plus (seulement si l'album est limité en photos).
+- Si le nombre maximum de photographes est atteint, un nouvel invité voit « Cet album est complet ».
+
+### Un album surprise
+
+Avant la révélation, les organisateurs voient seulement le nombre total de photos et, pour chaque photographe ayant envoyé au moins une photo, son prénom et son nombre de photos. Aucune image n'est accessible. Un invité ne voit que ses propres photos.
+
+### Coups de cœur
+
+Après la révélation, les organisateurs posent ou retirent un coup de cœur sur une photo. Le photographe le voit sur sa photo. L'administrateur le voit aussi.
+
+### Ce que voit et peut faire l'administrateur
+
+Il voit tous les événements (état, dates, nombre de photographes, de photos et leur poids, adresses e-mail recueillies). Il voit toutes les photos à tout moment, même avant la révélation et après la clôture, rangées par photographe, avec les coups de cœur. Il peut supprimer une photo, même après la révélation, ou un événement entier.
+
+### E-mails envoyés
+
+| Message | Pour qui | Quand |
+|---|---|---|
+| Bienvenue | L'invité qui a laissé son e-mail | Dès son inscription. Contient son lien personnel pour revenir photographier depuis n'importe quel appareil, et le QR code. |
+| Album ouvert | Les organisateurs | À l'ouverture : QR code et lien privé de l'album. Pas envoyé si l'album est déjà révélé. |
+| Album dévoilé | Les photographes qui ont laissé leur e-mail et envoyé au moins une photo | À la révélation. |
+| Album dévoilé | Les organisateurs | À la révélation : nombre de photos et de photographes, jour de clôture. |
+| Demande reçue | Le service (adresse d'expédition de OuiSnap) | À chaque demande envoyée depuis la vitrine. |
+| Mot de passe oublié | Les adresses de l'administrateur | Quand il clique sur « Mot de passe oublié ? ». |
+
+Ces messages partent une seule fois par album, à la première visite utile après l'heure prévue (page invité, album des organisateurs ou administration), ou par une tâche planifiée si elle est installée.
+
+### QR code et cartes de table
+
+Chaque événement a un QR code qui ouvre la page des invités. Dans l'administration, « QR code et liens » donne le PDF pour les tables (quatre cartes A6 par page A4, à découper), le QR code seul en image, le lien des invités et le lien privé des organisateurs. Les organisateurs peuvent aussi afficher le QR code en plein écran depuis leur page ou depuis l'e-mail.
+
+### Mot de passe oublié de l'administrateur
+
+Le bouton de l'écran de connexion envoie un lien aux adresses de l'administrateur. Le lien est valable une heure et ne sert qu'une fois. Le nouveau mot de passe compte au moins 10 caractères. Il déconnecte les sessions ouvertes. Au plus 3 demandes par heure et 10 par jour.
+
+### Sécurité de la connexion
+
+Après 5 mots de passe erronés depuis une même adresse en 15 minutes, la connexion est bloquée pendant ce délai.
+
+### Conservation, mentions légales et confidentialité
+
+La politique de confidentialité annonce la suppression des albums au plus tard six mois après leur clôture. Cette suppression se fait à la main depuis l'administration. Les mentions légales et la politique de confidentialité sont en ligne, liées depuis l'écran d'accueil des invités et la vitrine. Seule la page vitrine est ouverte aux moteurs de recherche.
 
 ## Où en est le projet
 
 | Étape | État |
 |---|---|
-| Page vitrine (présentation de l'application, formulaire de demande) | en ligne |
-| Parcours invité (QR code, « Connecté ! », appareil photo, envoi) | en ligne |
+| Page vitrine (présentation, vidéo, formulaire de demande) | en ligne |
+| Parcours invité (QR code, « Connecté ! », appareil photo, import, envoi, « Mes photos » dans l'ordre de prise de vue) | en ligne |
 | Album des organisateurs (compteurs, révélation, ZIP, coups de cœur) | en ligne |
-| Administration (événements, QR code, PDF des tables, photos) | en ligne |
+| Administration (événements, QR code, PDF des tables, photos, coups de cœur visibles) | en ligne |
+| Mot de passe oublié de l'administration | en ligne |
+| E-mails (bienvenue, ouverture, révélation, adaptés au type d'événement) | en ligne |
 | Mentions légales et politique de confidentialité | en ligne |
+| Tests de bout en bout Playwright (3 scénarios : mariage, mot de passe, types d'événement) | en place ; au dernier passage, le 4 octobre 2026, les trois scénarios réussissent |
+| Tâche planifiée pour les e-mails sans visite du site | à confirmer (voir le SDD) |
+| Suppression des albums six mois après la clôture | à faire à la main, pas automatisée |
 | Paiement | à décider |
 
-## Règles du produit
+## Pour aller plus loin
 
-- Un événement a une nature (mariage, baptême, anniversaire, autre) ; les textes de l'appli s'y adaptent.
-- L'invité n'installe rien et ne crée pas de compte : il scanne, donne son prénom (et son e-mail s'il le souhaite), photographie.
-- Chaque événement a une date de **début** (pas d'envoi avant), de **révélation** (fin des envois, les organisateurs découvrent les photos ; par défaut le lendemain du début à 12h00) et de **clôture** (une date sans heure, proposée deux semaines après le début, postérieure à la révélation ; passé ce jour, l'album n'est plus accessible aux organisateurs ni aux invités ; vide = jamais). Les photos d'un album clôturé restent sur le serveur.
-- Deux limites réglables par événement, vides = illimité : nombre de photographes, et nombre de photos par photographe.
-- Un invité ne voit que ses propres photos, et peut en supprimer tant que l'album est ouvert.
-- L'album est une surprise : avant la révélation, les organisateurs voient seulement qui a posté et combien.
-- Après la révélation, les organisateurs voient l'album rangé par invité, le téléchargent en ZIP et peuvent poser un coup de cœur sur une photo ; le photographe le voit sur la sienne.
-- Un invité qui laisse son e-mail reçoit 5 photos supplémentaires (si l'album est limité) et un message de bienvenue contenant un lien personnel pour revenir photographier depuis n'importe quel appareil.
-- Le nom et l'adresse e-mail des organisateurs sont obligatoires à la création d'un événement : ils reçoivent un message à l'ouverture (QR code à montrer aux invités, lien de leur album) puis un autre à la révélation.
-- Le QR code des invités figure aussi dans le message de bienvenue des photographes et sur la page des organisateurs ; un appui l'affiche en plein écran (`/qr/?c=CODE`).
-- À la révélation, un e-mail prévient les photographes qui ont laissé leur adresse et envoyé au moins une photo. Il part de l'adresse `MAIL_FROM`, à la première visite du site après la révélation (ou par la tâche planifiée `api/cron.php`), une seule fois par album.
-- L'administrateur voit toutes les photos à tout moment et peut en supprimer, même après la révélation. Il peut aussi supprimer un événement entier : ses photos sont alors effacées du serveur.
-
-## Architecture
-
-L'hébergement est un mutualisé OVH (PHP 8.3 + MySQL, pas de Node.js) :
-
-- **Interface** : Next.js en export statique (`out/`), Tailwind v4, Motion.
-- **API** : scripts PHP dans `public/api/`, connexion MySQL par PDO.
-- **Photos** : réduites à 2560 px dans le navigateur avant envoi, stockées dans `ouisnap-data/`, à côté du dossier du site et inaccessible depuis le web.
-
-| Dossier | Contenu |
-|---|---|
-| `src/app/` | page vitrine (`/`), appli invité (`/e/?c=CODE`), album des organisateurs (`/album/?k=CLÉ`), QR code plein écran (`/qr/?c=CODE`), administration (`/admin/`), pages légales (`/mentions-legales/`, `/confidentialite/`) |
-| `src/components/guest/` | écrans de l'appli invité |
-| `src/components/album/` | écrans de l'album des organisateurs |
-| `src/components/admin/` | écrans de l'administration (`/admin/`) |
-| `public/api/` | API PHP. Invités : `join`, `upload`, `photos`, `photo`, `delete`. Organisateurs : `album`, `album-photo`, `album-zip`, `album-like`. Administration : `admin-*`. Vitrine : `contact` |
-| `database/` | migrations SQL numérotées (MySQL) et schéma SQLite de test |
-| `scripts/` | mise en ligne, migrations, lancement local |
-
-## Commandes
-
-```bash
-npm install
-npm run dev       # interface seule (les appels à l'API échouent : pas de PHP)
-npm run local     # appli complète sur une base SQLite de test
-npm run migrate   # applique sur la base OVH les fichiers database/NNN_*.sql manquants
-npm run deploy    # compile et envoie le site chez OVH (ajouter -- --dry-run pour simuler)
-```
-
-`npm run local` ouvre l'appli sur http://localhost:8000/e/?c=DEMO2026 et l'administration sur http://localhost:8000/admin/ (mot de passe local : `admin`). Le lien du « Mot de passe oublié ? » se lit dans `.local/mails.log`. Les données de test vivent dans `.local/` ; les e-mails n'y sont pas envoyés mais écrits dans `.local/mails.log`.
-
-## Mise en ligne
-
-Les accès FTP et MySQL et le mot de passe de l'administration sont dans `.env.deploy`, non versionné (modèle : `deploy.env.example`).
-
-1. `npm run migrate` si un nouveau fichier SQL a été ajouté. La migration `014_password_reset.sql` (mot de passe oublié) doit passer **avant** le déploiement : sans ses tables, l'administration refuse toute connexion. La base n'étant joignable que depuis l'hébergement, la commande dépose un script PHP temporaire, l'appelle une fois, puis le supprime.
-2. `npm run deploy`. Le script génère `api/config.php` et envoie `out/` sans rien supprimer sur le serveur.
-
-## Production
-
-- **Adresse** : `https://ouisnap.pourunouieternel.fr`. Elle figure dans `OVH_SITE_URL` (`.env.deploy`, utilisée dans les e-mails) et dans `SITE_URL` (`src/app/layout.tsx`, utilisée pour le référencement). Les QR codes imprimés la contiennent : la changer les rendrait inutilisables.
-- **Sécurité** : HTTPS forcé et mémorisé par le navigateur (HSTS), clés des liens privés jamais transmises à un autre site (`Referrer-Policy`), fichiers internes de l'API inaccessibles depuis le web, erreurs PHP jamais affichées.
-- **Administration** : après 5 mots de passe erronés depuis une même adresse en 15 minutes, la connexion est bloquée pendant ce délai.
-- **Mot de passe oublié** : le bouton de l'écran de connexion envoie un lien aux adresses de `ADMIN_EMAILS` (`.env.deploy`, ainsi que `OVH_SITE_URL`, obligatoire). Le lien (`/admin/#reset=<jeton>`, le jeton étant dans le fragment pour n'atteindre ni les journaux du serveur ni le Referer) est valable une heure et ne sert qu'une fois ; un nouveau lien annule les précédents (seulement si un envoi a réussi) ; 3 demandes par heure et 10 par jour au maximum. Le mot de passe choisi est gardé dans la base (table `settings`) et prime sur `ADMIN_PASSWORD`, qui n'est plus que le mot de passe initial ; le changer déconnecte les sessions ouvertes. Secours si les e-mails ne partent pas : supprimer la ligne `admin_password_hash` de la table `settings`, ce qui rend la main à `ADMIN_PASSWORD`.
-- **Référencement** : seule la page vitrine est ouverte aux moteurs de recherche (`robots.txt`).
-- **Tâche planifiée** : pour que les e-mails d'ouverture et de révélation partent même si personne ne visite le site, créer dans l'espace client OVH une tâche horaire sur `ouisnap/api/cron.php`.
-- **Téléchargement ZIP** : l'archive est écrite au fil de l'eau, sans fichier temporaire. Essai du 2026-10-03 sur le serveur : 1 000 photos (651 Mo) téléchargées en 64 secondes. L'hébergement refusant les réponses qui annoncent une très grosse taille, celle-ci n'est annoncée qu'en dessous de 150 Mo. Limite du format : 4 Go par archive.
-- **Engagement de conservation** : la politique de confidentialité annonce la suppression des albums au plus tard six mois après leur clôture. Cette suppression se fait à la main, depuis l'administration.
-- **Sauvegardes** : les photos (`ouisnap-data/`) et la base ne sont sauvegardées que par les instantanés d'OVH.
-
-## Page vitrine
-
-Elle présente OuiSnap comme le complément des reportages de PourUnOuiEternel (pourunouieternel.fr) et se termine par un formulaire de demande : chaque demande est enregistrée dans la table `requests` et envoyée par e-mail à l'adresse `MAIL_FROM`. Elle s'ouvre sur la vidéo de présentation (`public/media/ouisnap-teaser.mp4`, copie du fichier de `video/`) ; ses autres illustrations sont de vraies captures de l'application (`public/media/apercu-*.jpg`).
-
-## Créer un événement
-
-Tout se fait depuis l'administration : https://ouisnap.pourunouieternel.fr/admin/
-
-1. « Nouvel événement » : nature, nom de l'album, début, révélation, clôture, limites.
-2. « QR code et liens » : télécharger le **PDF pour les tables** (quatre cartes A6 par page A4, à découper) et copier le lien privé de l'album à remettre aux organisateurs.
+- [docs/PDD.md](docs/PDD.md) : les processus détaillés, étape par étape, avec leurs règles de gestion.
+- [docs/SDD.md](docs/SDD.md) : la technique (architecture, installation, commandes, mise en ligne, tests).

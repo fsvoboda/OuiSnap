@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prépare la base de test locale (.local/dev.sqlite) pour les tests pw. Ne touche jamais à la production.
+# Prépare la base de test locale (.local/dev.sqlite) pour les tests Playwright. Ne touche jamais à la production.
 # Usage : bash .claude/skills/pw/scripts/base-locale.sh etat      vérifie que le serveur local répond sur la base de test
 #         bash .claude/skills/pw/scripts/base-locale.sh mdp       remet le mot de passe admin local à « admin » et vide les demandes de lien
 #         bash .claude/skills/pw/scripts/base-locale.sh nettoyer  supprime les événements créés par les tests (et leurs photos)
