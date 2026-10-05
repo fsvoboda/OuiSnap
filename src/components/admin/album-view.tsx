@@ -174,7 +174,15 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
             </button>
           </div>
           <div className="min-h-0 flex-1 px-3">
-            <ZoomablePhoto key={current.id} endpoint="admin-photo" token="" id={current.id} />
+            <ZoomablePhoto
+              key={current.id}
+              endpoint="admin-photo"
+              token=""
+              id={current.id}
+              onSwipe={(step) => {
+                if (open + step >= 0 && open + step < list.length) show(open + step);
+              }}
+            />
           </div>
           {current.liked && (
             <p className="flex items-center justify-center gap-2 px-4 pt-4 font-serif text-xl italic">

@@ -317,7 +317,15 @@ export function AlbumApp() {
             </button>
           </div>
           <div className="min-h-0 flex-1 px-3">
-            <ZoomablePhoto key={current.id} endpoint="album-photo" token={token} id={current.id} />
+            <ZoomablePhoto
+              key={current.id}
+              endpoint="album-photo"
+              token={token}
+              id={current.id}
+              onSwipe={(step) => {
+                if (open !== null && open + step >= 0 && open + step < photos.length) setOpen(open + step);
+              }}
+            />
           </div>
           <div className="flex items-center justify-center gap-6 p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <button

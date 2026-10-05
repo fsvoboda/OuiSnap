@@ -243,7 +243,7 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 | `EventLinks` | `src/components/admin/event-links.tsx` | QR code, PDF des tables, lien des invités, lien privé de l'album |
 | `AlbumView` | `src/components/admin/album-view.tsx` | Toutes les photos d'un album pour l'administrateur, avec suppression. Ouvrir une photo ajoute une étape à l'historique du navigateur (`pushState`), pour que le retour arrière ramène à la galerie au lieu de quitter l'administration |
 | `PasswordReset` | `src/components/admin/password-reset.tsx` | Choix d'un nouveau mot de passe depuis le lien reçu |
-| `PhotoImage`, `LazyThumb`, `ZoomablePhoto` | `src/components/photo-view.tsx` | Chargement d'une photo protégée, vignette chargée à l'approche de l'écran, photo agrandie avec zoom |
+| `PhotoImage`, `LazyThumb`, `ZoomablePhoto` | `src/components/photo-view.tsx` | Chargement d'une photo protégée, vignette chargée à l'approche de l'écran, photo agrandie avec zoom et, sans zoom, balayage horizontal vers la photo suivante ou précédente (prop `onSwipe`, utilisée par l'administration et l'album des organisateurs) |
 | `QrCard`, `QrFullScreen` | `src/components/qr-card.tsx` | QR code en vignette et en plein écran |
 | `QrPage` | `src/components/qr-page.tsx` | Page `/qr/` : vérifie le code par `join`, puis affiche le QR code |
 | `RequestForm` | `src/components/request-form.tsx` | Formulaire de demande de la vitrine, avec champ piège `site` |

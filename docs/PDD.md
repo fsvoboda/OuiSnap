@@ -388,7 +388,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 1. La page affiche le total (« N photos, N invités ») et le bouton « Tout télécharger ».
 2. Les photos sont rangées par invité (ordre alphabétique des prénoms), chacune dans sa section avec son nombre de photos, puis dans l'ordre de prise de vue.
-3. Les organisateurs touchent une photo : elle s'agrandit avec zoom, flèches précédente et suivante, et le rang « N sur total ».
+3. Les organisateurs touchent une photo : elle s'agrandit avec zoom, flèches précédente et suivante, et le rang « N sur total ». Un balayage vers la gauche ou la droite passe aussi à la photo suivante ou précédente, tant que la photo n'est pas zoomée (photo-view.tsx).
 4. Le bouton cœur ajoute ou retire un coup de cœur (« Ajouter un coup de cœur » / « Retirer le coup de cœur ») ; le cœur s'affiche tout de suite et revient en arrière si le serveur refuse.
 5. « Tout télécharger » télécharge `album-<nom de l'album>.zip`. Il contient un dossier par photographe, avec des photos numérotées dans l'ordre de prise de vue (`001.jpg`, `002.jpg`…).
 
@@ -423,7 +423,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 1. Dans la liste, l'administrateur clique sur « Voir les photos » de l'événement.
 2. L'écran indique « N photos, N photographes » et, si besoin, « (pas encore révélé) ».
 3. Les photos sont rangées par photographe ; les coups de cœur portent un cœur.
-4. Il agrandit une photo ; une mention « Coup de cœur des organisateurs » s'affiche si besoin. Il revient à la galerie par la croix en haut à droite, ou par le bouton retour du téléphone ou du navigateur (album-view.tsx).
+4. Il agrandit une photo ; une mention « Coup de cœur des organisateurs » s'affiche si besoin. Il passe d'une photo à l'autre par les flèches ou par un balayage vers la gauche ou la droite. Il revient à la galerie par la croix en haut à droite, ou par le bouton retour du téléphone ou du navigateur (album-view.tsx).
 5. Il clique sur « Supprimer » puis sur « Confirmer la suppression ». La photo et sa vignette sont effacées du serveur.
 6. L'écran passe à la photo suivante, ou se ferme s'il n'en reste plus.
 
