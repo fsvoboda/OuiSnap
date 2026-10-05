@@ -388,7 +388,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 1. La page affiche le total (« N photos, N invités ») et le bouton « Tout télécharger ».
 2. Les photos sont rangées par invité (ordre alphabétique des prénoms), chacune dans sa section avec son nombre de photos, puis dans l'ordre de prise de vue.
-3. Les organisateurs touchent une photo : elle s'agrandit avec zoom, flèches précédente et suivante, et le rang « N sur total ». Un balayage vers la gauche ou la droite passe aussi à la photo suivante ou précédente, tant que la photo n'est pas zoomée (photo-view.tsx).
+3. Les organisateurs touchent une photo : elle s'agrandit avec zoom, flèches précédente et suivante, et le rang « N sur total ». Un balayage vers la gauche ou la droite passe aussi à la photo suivante ou précédente, tant que la photo n'est pas zoomée. Un double appui, ou un double clic, ramène la photo à son zoom initial (photo-view.tsx).
 4. Le bouton cœur ajoute ou retire un coup de cœur (« Ajouter un coup de cœur » / « Retirer le coup de cœur ») ; le cœur s'affiche tout de suite et revient en arrière si le serveur refuse.
 5. « Tout télécharger » télécharge `album-<nom de l'album>.zip`. Il contient un dossier par photographe, avec des photos numérotées dans l'ordre de prise de vue (`001.jpg`, `002.jpg`…).
 

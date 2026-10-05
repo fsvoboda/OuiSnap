@@ -68,8 +68,13 @@ export function LazyThumb({ endpoint, token, id }: Source) {
 
 // Balayage horizontal franc : assez long, et nettement plus horizontal que vertical.
 const SWIPE_DISTANCE = 48;
+// Double appui : deux appuis sans glissement, rapprochés dans le temps et sur l'écran.
+const TAP_SLOP = 10;
+const DOUBLE_TAP_DELAY = 300;
+const DOUBLE_TAP_DISTANCE = 30;
 
 // Photo agrandie : pincer pour zoomer, glisser pour se déplacer dans l'image.
+// Un double appui (ou double clic) revient au zoom initial.
 // Sans zoom, un balayage vers la gauche ou la droite passe à la photo suivante ou précédente.
 export function ZoomablePhoto({
   endpoint,
@@ -83,6 +88,7 @@ export function ZoomablePhoto({
   const fingers = useRef(0);
   // Point de départ du geste ; « multi » dès qu'un second doigt s'est posé (pincement, pas balayage).
   const gesture = useRef<{ x: number; y: number; multi: boolean } | null>(null);
+  const lastTap = useRef<{ time: number; x: number; y: number } | null>(null);
 
   // Garde l'image dans le cadre : on ne peut pas la faire glisser hors de l'écran.
   function clamp(scale: number, x: number, y: number) {
@@ -114,10 +120,20 @@ export function ZoomablePhoto({
     const start = gesture.current;
     if (fingers.current === 0) {
       gesture.current = null;
-      if (start && !start.multi && !cancelled && view.scale === 1) {
+      if (start && !start.multi && !cancelled) {
         const dx = event.clientX - start.x;
         const dy = event.clientY - start.y;
-        if (Math.abs(dx) >= SWIPE_DISTANCE && Math.abs(dx) > 2 * Math.abs(dy)) onSwipe?.(dx < 0 ? 1 : -1);
+        if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) {
+          const previous = lastTap.current;
+          const double =
+            previous !== null &&
+            event.timeStamp - previous.time < DOUBLE_TAP_DELAY &&
+            Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < DOUBLE_TAP_DISTANCE;
+          lastTap.current = double ? null : { time: event.timeStamp, x: event.clientX, y: event.clientY };
+          if (double) setView({ scale: 1, x: 0, y: 0 });
+        } else if (view.scale === 1 && Math.abs(dx) >= SWIPE_DISTANCE && Math.abs(dx) > 2 * Math.abs(dy)) {
+          onSwipe?.(dx < 0 ? 1 : -1);
+        }
       }
     }
     pinch.onPointerUp(event);
