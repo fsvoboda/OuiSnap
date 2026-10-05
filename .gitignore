@@ -52,3 +52,6 @@ next-env.d.ts
 # configuration locale des serveurs MCP et sources de la vidéo de présentation
 /.mcp.json
 /video/
+
+# notes de travail des études (le rapport final est dans reports/)
+/research_notes/
