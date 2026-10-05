@@ -133,7 +133,7 @@ Versions lues dans [`../package.json`](../package.json) et dans `node_modules/` 
 | Motion | `^14.0.0` | 14.0.0 | Animations (`motion/react`) |
 | `@phosphor-icons/react` | `^2.1.10` | 2.1.10 | Icônes |
 | `qrcode` | `^1.5.4` | 1.5.4 | Génération des QR codes dans le navigateur |
-| `jspdf` | `^4.2.1` | 4.2.1 | PDF des cartes de table, chargé à la demande |
+| `jspdf` | `^4.2.1` | 4.2.1 | PDF des cartes de table et des organisateurs, chargé à la demande |
 | ESLint | `^9` | 9.39.5 | Analyse du code, avec `eslint-config-next` 16.3.8 |
 | PHP | — | — | API. Le code exige PHP 8.1 au minimum (type de retour `never`). Le README d'origine annonce PHP 8.3 chez OVH : à confirmer dans l'espace client. |
 | MySQL | — | — | Base de production (moteur InnoDB, `utf8mb4`). Version : à confirmer. |
@@ -195,7 +195,7 @@ OuiSnap-1/
 │   │   ├── guest/          appli invité
 │   │   ├── album/          album des organisateurs
 │   │   └── admin/          administration
-│   └── lib/                fonctions partagées du front (dont la file d'envoi : upload-queue.ts, photo-store.ts, wake-lock.ts)
+│   └── lib/                fonctions partagées du front (dont la file d'envoi : upload-queue.ts, photo-store.ts, wake-lock.ts ; les cartes imprimables : card-kit.ts, table-card.ts, organizer-card.ts ; qr.ts)
 └── .claude/skills/pw/      tests de bout en bout et leur bilan
 ```
 
@@ -240,7 +240,7 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 | `AlbumApp` | `src/components/album/album-app.tsx` | Album des organisateurs : compte à rebours et compteurs avant la révélation ; ensuite photos par invité, coups de cœur, téléchargement ZIP |
 | `AdminApp` | `src/components/admin/admin-app.tsx` | Connexion, liste des événements, suppression d'un événement, demande de lien « mot de passe oublié » |
 | `EventForm` | `src/components/admin/event-form.tsx` | Création et modification d'un événement ; propose la révélation (lendemain 12h00) et la clôture (deux semaines après le début) |
-| `EventLinks` | `src/components/admin/event-links.tsx` | QR code, PDF des tables, lien des invités, lien privé de l'album |
+| `EventLinks`, `QrCase`, `CopyRow` | `src/components/admin/event-links.tsx` | Bloc « QR code et liens ». `EventLinks` affiche deux cases `QrCase` côte à côte (invités, puis organisateurs si l'événement a une clé d'album) puis deux lignes `CopyRow`. Chaque `QrCase` montre l'image du QR code (`imageQr`, avec le bandeau « ALBUM PRIVÉ » pour la case privée), un bouton PDF (« Préparation… » pendant la création, message d'erreur si elle échoue) et un lien de téléchargement du code seul (`ouisnap-qr-<code>.png`, `ouisnap-qr-organisateurs-<code>.png`). `CopyRow` : lien sélectionnable, bouton de copie et bouton qui l'ouvre dans un nouvel onglet (`target="_blank"`, `rel="noopener noreferrer"`). Le PDF et l'image se fabriquent dans le navigateur (voir [5.9](#59-cartes-imprimables)). |
 | `AlbumView` | `src/components/admin/album-view.tsx` | Toutes les photos d'un album pour l'administrateur, avec suppression. Ouvrir une photo ajoute une étape à l'historique du navigateur (`pushState`), pour que le retour arrière ramène à la galerie au lieu de quitter l'administration |
 | `PasswordReset` | `src/components/admin/password-reset.tsx` | Choix d'un nouveau mot de passe depuis le lien reçu |
 | `PhotoImage`, `LazyThumb`, `ZoomablePhoto` | `src/components/photo-view.tsx` | Chargement d'une photo protégée, vignette chargée à l'approche de l'écran, photo agrandie avec zoom (double appui ou double clic pour revenir au zoom initial) et, sans zoom, balayage horizontal vers la photo suivante ou précédente (prop `onSwipe`, utilisée par l'administration et l'album des organisateurs) |
@@ -259,11 +259,13 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 | [`photo-store.ts`](../src/lib/photo-store.ts) | Stockage des photos en attente sur le téléphone (IndexedDB) avec repli en mémoire : `openStore()`, `countStored()`, type `QueuedPhoto` (voir [5.5](#55-file-denvoi-des-photos)). |
 | [`wake-lock.ts`](../src/lib/wake-lock.ts) | `useWakeLock(actif)` : garde l'écran allumé pendant l'envoi (voir [5.5](#55-file-denvoi-des-photos)). |
 | [`image.ts`](../src/lib/image.ts) | `toJpeg()` : réduit une image ou une image de la vidéo en JPEG de 2560 px au plus sur le grand côté, qualité 0,85. Gère le zoom numérique en ne gardant que le centre. |
-| [`kinds.ts`](../src/lib/kinds.ts) | Les quatre natures d'événement et les textes qui en dépendent côté front. `kindOf()` retombe sur « autre » pour une valeur inconnue. |
+| [`kinds.ts`](../src/lib/kinds.ts) | Les quatre natures d'événement et les textes qui en dépendent côté front. `kindOf()` retombe sur « autre » pour une valeur inconnue. `kindKey()` renvoie la clé de la nature (ou « autre ») : elle choisit le dessin des cartes imprimables. |
 | [`pinch.ts`](../src/lib/pinch.ts) | `usePinch()` : pincement à deux doigts et glissement à un doigt. |
-| [`qr.ts`](../src/lib/qr.ts) | `guestUrl()`, `qrDataUrl()`, et `uploadEventQr()` qui dépose l'image du QR code sur le serveur pour les e-mails. |
+| [`qr.ts`](../src/lib/qr.ts) | `guestUrl()` (`/e/?c=CODE`), `albumUrl()` (`/album/?k=CLÉ`, l'album privé), `qrDataUrl()` (QR code sans logo, couleur `#1a2620` sur blanc) et `uploadEventQr()`, qui dépose sur le serveur l'image du QR code des invités pour les e-mails. Ce QR code des e-mails, celui de la page des organisateurs et celui du plein écran n'ont pas de logo. |
 | [`shutter.ts`](../src/lib/shutter.ts) | Son d'obturateur synthétisé, sans fichier audio. |
-| [`table-card.ts`](../src/lib/table-card.ts) | PDF des tables : une carte A6 dessinée sur un canevas (1240 × 1748 px), posée quatre fois sur une page A4 avec traits de coupe. |
+| [`card-kit.ts`](../src/lib/card-kit.ts) | Outils de dessin communs aux cartes imprimables : couleurs, canevas, textes (espacé, courbe, règle du nom, paragraphe), QR code tracé module par module avec son cartouche, plaque, logo, motifs, écriture du PDF (voir [5.9](#59-cartes-imprimables)). |
+| [`table-card.ts`](../src/lib/table-card.ts) | PDF des tables : `drawTableCard()` dessine une carte A6 (1240 × 1748 px) selon la nature de l'événement, `downloadTablePdf()` la pose quatre fois sur une page A4. Fichier `ouisnap-tables-<code>.pdf`. |
+| [`organizer-card.ts`](../src/lib/organizer-card.ts) | PDF des organisateurs : `drawOrganizerCard()` dessine deux volets côte à côte (2480 × 1754 px, A5 paysage), `downloadOrganizerPdf()` le pose deux fois sur une page A4. Fichier `ouisnap-organisateurs-<code>.pdf`. |
 
 ### 5.4 Session de l'invité
 
@@ -436,7 +438,42 @@ Définie dans [`../src/app/globals.css`](../src/app/globals.css). Thème unique,
 
 Polices, chargées par `next/font/google` : Cormorant Garamond (titres, classe `font-serif`) et Montserrat (texte courant, classe `font-sans`). La classe utilitaire `libelle` donne les petites capitales espacées.
 
-Les e-mails et le PDF des tables reprennent ces couleurs en dur (`public/api/mail.php`, `src/lib/table-card.ts`) : un changement de charte doit y être répercuté à la main. Le PDF utilise un doré un peu plus soutenu (`#b8924a`).
+Les e-mails et les PDF des cartes reprennent ces couleurs en dur (`public/api/mail.php`, `src/lib/card-kit.ts`) : un changement de charte doit y être répercuté à la main. Les cartes utilisent un doré un peu plus soutenu (`#b8924a`), un or foncé pour les petits libellés (`#7d5f24`), un bleu d'eau (`#7ea3ad`) pour le baptême ; les polices sont celles du site, lues dans les variables CSS `--font-cormorant` et `--font-montserrat`.
+
+
+### 5.9 Cartes imprimables
+
+Trois fichiers de `src/lib` fabriquent les PDF des cartes, entièrement dans le navigateur de l'administrateur : aucune donnée n'est envoyée au serveur et aucune image n'est ajoutée au dépôt. `card-kit.ts` porte les outils communs, `table-card.ts` les quatre cartes de table, `organizer-card.ts` la carte des organisateurs. Les règles de produit correspondantes sont dans le PDD (RG-96 à RG-104).
+
+**Canevas 2D et polices.** Chaque carte est tracée sur un `<canvas>` blanc (`nouvelleCarte()`). Avant tout dessin, `document.fonts.load()` charge Cormorant Garamond (500 et 500 italique) et Montserrat (500 et 600), lues dans les variables CSS du site : sans cela le premier dessin partirait en police de repli. Les coordonnées sont en pixels à 300 points par pouce.
+
+| Carte | Canevas | Taille réelle | Pose dans le PDF A4 (portrait) |
+|---|---|---|---|
+| Table | 1240 × 1748 px | A6, 105 × 148,5 mm | quatre fois : (0, 0), (105, 0), (0, 148,5), (105, 148,5) ; coupes : un trait vertical à x = 105 et un horizontal à y = 148,5 |
+| Organisateurs | 2480 × 1754 px (deux volets de 1240 px) | A5 paysage, 210 × 148,5 mm | deux fois : (0, 0) et (0, 148,5) ; coupe : un trait horizontal à y = 148,5 |
+
+**Pose dans le PDF** (`enregistrerPdf()`). `jspdf` est chargé à la demande (`import()`), pour ne rien coûter aux autres pages. Le canevas est converti en PNG (le trait sur blanc s'y compresse bien, sans le halo du JPEG autour du QR code), puis posé à chaque place avec `addImage` (alias `carte`, compression `FAST`). Les traits de coupe sont des pointillés (1,5 mm de trait, 1,5 mm de blanc) gris 115, épaisseur 0,15 mm : plus clairs, ils disparaîtraient à l'impression. Le fichier est enregistré par `pdf.save()`.
+
+**Volet droit de la carte des organisateurs.** Les motifs de `card-kit.ts` sont écrits pour une carte de table et prennent un décalage horizontal `dx`. La carte des organisateurs les reprend avec `dx = 1240` sur le volet droit ; le volet gauche est le carton crème, dessiné par `carton()`.
+
+**QR code tracé module par module** (`coderQr()`, `tracerQr()`, `plaque()`, `imageQr()`).
+- Le code est créé par `QRCode.create()` (bibliothèque `qrcode`) et chaque module noir est dessiné par `fillRect` en pixels entiers, pour des bords nets à l'impression (une image étirée serait floue). Sur une plaque, le pas est `ceil(590 / modules)` ; la plaque fait 780 px de côté (`COTE_PLAQUE`), le code y est centré. Dans `imageQr()`, le pas est de 20 px et la marge de 3 modules.
+- Cartouche du logo : au centre, 5 modules de haut et au plus 30 % de la largeur (arrondie à l'impair inférieur), calé sur la grille. Ses modules sont laissés blancs en entier. Le logo « Oui » (romain) et « Snap » (italique) y est écrit au plus grand corps qui tienne avec un module de blanc tout autour.
+- Niveau de correction d'erreurs : `coderQr()` essaie H, puis Q, puis M. Un niveau est retenu si le code fait au moins 29 modules de côté et si le cartouche ne recouvre aucun module réservé (`reservedBit` : repères d'angle, repère d'alignement, lignes de synchronisation). Garde-fou : si aucun niveau ne convient (les grands codes ont un repère d'alignement en plein centre), le code est créé au niveau M et tracé sans cartouche ni logo. Pour l'adresse d'un événement, le niveau et la version dépendent de la longueur de l'adresse : ils sont recalculés à chaque tracé.
+- `imageQr(url, bandeau?)` : image PNG du code seul, logo au centre. Avec un bandeau, un bandeau sapin de 110 px de haut, mot en capitales espacées en blanc, est ajouté au-dessus ; l'administration l'utilise pour le QR code des organisateurs (« ALBUM PRIVÉ »), y compris dans l'image téléchargée.
+- `plaque()` accepte un `onglet` (étiquette sapin de 96 px de haut posée sur le bord supérieur de la plaque, de sa largeur, avec un liseré facultatif) : c'est l'onglet « ALBUM PRIVÉ » de la carte des organisateurs.
+
+**Règle du nom** (`composerNom()`, `nomDroit()`). Chaque carte donne à `composerNom()` sa zone (hauteur, largeur d'une ligne, qui peut dépendre du corps et du rang de la ligne sur un arc). Le corps part de 88 px (`corpsMax` le change : 112 px pour le mariage) et baisse de 4 px en 4 px jusqu'à 56 px pour tenir sur une ligne ; puis deux lignes équilibrées (`equilibrer()`) à partir de 62 px (`corpsMaxDeuxLignes`), jusqu'au plancher de 36 px (`CORPS_PLANCHER`, 3 mm) ; au plancher, `tronquer()` coupe la seconde ligne par « … ». Jamais de troisième ligne. Un mot seul plus large que la ligne est lui-même coupé.
+
+**Texte courbe** (`texteCourbe()`). Chaque lettre est posée sur un cercle de centre et de rayon donnés : sa position vient de la mesure du début de la chaîne (pour garder les approches de paires), plus un interlettrage ajouté à la main (`letterSpacing` du canevas n'est pas utilisé, il manque à certains navigateurs). « haut » : texte au sommet, hauts de lettres vers l'extérieur ; « bas » : au point bas, hauts de lettres vers le centre. Utilisé pour le baptême (nom, libellé, explication) et sur la carte des organisateurs du baptême. Sur le baptême, le nom ne s'étale pas à plus de 42° du sommet (largeur de ligne : 1,466 fois le rayon).
+
+**Dessins par nature** (`table-card.ts`, table `dessins` de `drawTableCard()`, clé donnée par `kindKey()`) : mariage (deux alliances par `alliances()`, filets d'or, plaque à contour doré de 3 px), baptême (`ondes()`, `goutte()`, textes courbes), anniversaire (`bougie()`, sept bougies, `glacage()`, `presentoir()`, plaque à contour sapin de 5 px), autre (`viseur()`, `mire()`, repères de mi-côté, déclencheur dessiné). Après le dessin de la nature, `logo()` signe le pied de la carte. L'étiquette est `kindOf(kind).album` en capitales, avec l'apostrophe typographique.
+
+**Carte des organisateurs** (`organizer-card.ts`). `drawOrganizerCard()` appelle `carton()` (volet gauche : pastille « POUR … », titre « Votre album » dont le corps baisse de 190 px vers 120 px pour tenir en 930 px, nom par `nomDroit()`, rubriques « AVANT LA RÉVÉLATION », « APRÈS », « RÉVÉLATION DE L'ALBUM », consigne de confidentialité), puis le volet de la nature (table `VOLETS`), puis le logo (corps 78 px) et « par PourUnOuiEternel » dessous. La date vient de `texteRevelation()` : heure de Paris (`Intl.DateTimeFormat`, fuseau `Europe/Paris`), sans année, « er » du 1er en exposant ; `revealAt` nul ou illisible : « Vous serez prévenus par e-mail. » ; `revealed` vrai ou date passée : « Votre album est dévoilé. » ; la ligne baisse de 72 px à 56 px pour tenir en 930 px.
+
+**Règle du nom de fichier.** Les fichiers téléchargés portent le code de l'événement : `ouisnap-tables-<code>.pdf`, `ouisnap-organisateurs-<code>.pdf`, `ouisnap-qr-<code>.png`, `ouisnap-qr-organisateurs-<code>.png`. Jamais la clé de l'album, qui est le secret du lien privé (voir [10.3](#103-jetons-des-invités-et-clé-dalbum)).
+
+**Limites** (voir aussi [15.1](#151-limites-de-fonctionnement)). Rien n'a été imprimé pour vérifier le rendu sur papier. Les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés. Le rendu n'a pas été vérifié sur Safari. Le tracé emploie `roundRect()` du canevas, récent.
 
 ---
 
@@ -962,6 +999,7 @@ Si la table `settings` manque, `admin_password()` échoue et **toute connexion e
 - Le code de l'événement n'est pas un secret : il est imprimé sur les tables. Il permet de voir le nom de l'album, sa nature et son état, et de s'inscrire.
 - Le jeton d'invité donne accès aux photos de cet invité seulement.
 - La clé d'album donne accès à tout l'album après la révélation. Quiconque a le lien a l'accès : c'est un lien privé, pas un compte.
+- La clé d'album est imprimée, sous forme de QR code (`/album/?k=…`), sur la carte des organisateurs et dans l'image « QR code privé seul ». Elle est lue dans les données de l'administration (`event.albumKey`) et le PDF se fabrique dans le navigateur : rien n'est envoyé au serveur. Le fichier téléchargé porte le code de l'événement, jamais la clé (un nom de fichier se voit dans un aperçu ou un dossier partagé). La carte et l'image portent « ALBUM PRIVÉ » et une consigne (« ne la posez pas sur les tables ») : elles ne doivent pas passer pour celles des invités. Qui possède la carte a l'accès à l'album : elle se remet en main propre.
 - `current_album()` accepte une clé soit par `album_key`, soit par son empreinte, pour les anciens albums dont seule l'empreinte existait.
 
 ### 10.4 Ce qui sort du serveur avant la révélation
@@ -1299,7 +1337,7 @@ D'après les limites déclarées dans `rapport.mjs` et la lecture des scripts :
 
 - La vraie caméra d'un téléphone, le zoom, la rotation, l'import depuis la galerie.
 - Le passage automatique à l'heure de révélation, la clôture, l'état « à venir ».
-- Le téléchargement ZIP et le PDF des tables.
+- Le téléchargement ZIP, le PDF des tables et le PDF des organisateurs.
 - L'envoi réel des e-mails par OVH, et le contenu des e-mails autres que celui de réinitialisation.
 - L'expiration du lien de réinitialisation au bout d'une heure.
 - La page vitrine et le formulaire de demande.
@@ -1333,6 +1371,9 @@ Uniquement ce que le code ou le README d'origine confirment.
 | Un e-mail d'ouverture ou de révélation en échec n'est pas renvoyé | `mail.php` |
 | Sans tâche planifiée ni visite, les e-mails d'ouverture et de révélation ne partent pas à l'heure | `mail.php`, `cron.php` |
 | Pas d'application installable ni de mode hors ligne : pas de service worker, donc pas d'envoi en arrière-plan page fermée | Aucun manifeste ni service worker |
+| Cartes imprimables : rendu non vérifié sur papier. Les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés ; rien n'a été imprimé | `card-kit.ts`, `table-card.ts`, `organizer-card.ts` |
+| Cartes imprimables : rendu non vérifié sur Safari. Le tracé emploie `roundRect()` du canevas et les polices chargées par `document.fonts.load()` | `card-kit.ts` |
+| Cartes imprimables : le niveau de correction d'erreurs du QR code dépend de la longueur de l'adresse (H, Q ou M) ; sans niveau qui convienne, le code est tracé sans logo | `coderQr()` dans `card-kit.ts` |
 | Un seul administrateur | `lib.php` |
 | Paiement : non réalisé, « à décider » | README d'origine |
 
@@ -1346,7 +1387,7 @@ Uniquement ce que le code ou le README d'origine confirment.
 | Données de démonstration dans les migrations | Les migrations 002, 003 et 005 créent et règlent `DEMO2026` en production. |
 | Deux schémas à tenir à la main | Migrations MySQL d'un côté, `local.sqlite.sql` de l'autre. Rien ne vérifie qu'ils concordent. |
 | Textes par nature d'événement en double | `src/lib/kinds.ts` pour le front, `KIND_TEXTS`, `album_label()` et `hosts_label()` dans `mail.php` pour les e-mails. La liste des natures existe aussi dans `EVENT_KINDS` (`lib.php`). |
-| Couleurs en double | `globals.css`, `mail.php`, `table-card.ts`. |
+| Couleurs en double | `globals.css`, `mail.php`, `card-kit.ts`. |
 | Bonus e-mail écrit en dur dans l'administration | Le texte « (+5 avec e-mail) » de `admin-app.tsx` ne lit pas la constante `EMAIL_BONUS` du serveur. |
 | `config.example.php` incomplet | Ne montre que les clés MySQL. |
 | Commentaires datés | L'en-tête de `deploy.sh` parle encore de « la page vitrine » ; plusieurs commentaires disent « mariés » là où le code traite toutes les natures d'événement. |
@@ -1401,10 +1442,17 @@ Aucune de ces pistes n'est décidée. Elles découlent directement des limites c
 | Ajouter une nature d'événement | `src/lib/kinds.ts`, `EVENT_KINDS` dans `public/api/lib.php`, `KIND_TEXTS` et les libellés de `public/api/mail.php`, le tableau `$kinds` de `public/api/contact.php` |
 | Le contenu ou l'allure d'un e-mail | `public/api/mail.php` |
 | Un message d'erreur de l'API | Le fichier PHP de l'endpoint, ou `public/api/lib.php` pour les messages communs |
-| Les couleurs ou les polices | `src/app/globals.css`, `src/app/layout.tsx` ; puis `public/api/mail.php` et `src/lib/table-card.ts`, qui ont leurs propres valeurs |
-| Le logo | `src/components/logo.tsx`, `src/app/icon.svg` ; en-tête des e-mails dans `mail.php` ; carte de table dans `table-card.ts` |
-| La carte de table (PDF) | `src/lib/table-card.ts` |
-| L'allure du QR code | `src/lib/qr.ts`, `src/components/qr-card.tsx` |
+| Les couleurs ou les polices | `src/app/globals.css`, `src/app/layout.tsx` ; puis `public/api/mail.php` et `src/lib/card-kit.ts`, qui ont leurs propres valeurs |
+| Le logo | `src/components/logo.tsx`, `src/app/icon.svg` ; en-tête des e-mails dans `mail.php` ; carte de table et carte des organisateurs dans `src/lib/card-kit.ts` (`logo()`) |
+| Le dessin ou les textes d'une carte de table (PDF) | `src/lib/table-card.ts` ; ses outils de dessin : `src/lib/card-kit.ts` |
+| La carte des organisateurs (PDF) : textes, date de révélation, motif | `src/lib/organizer-card.ts` ; outils de dessin : `src/lib/card-kit.ts` |
+| Le nom de fichier d'un PDF ou d'une image de QR code | `downloadTablePdf()` dans `src/lib/table-card.ts`, `downloadOrganizerPdf()` dans `src/lib/organizer-card.ts`, `imageName` dans `src/components/admin/event-links.tsx` |
+| La taille de la page, la pose des cartes et les traits de coupe | `enregistrerPdf()` dans `src/lib/card-kit.ts` ; les places et les coupes de chaque PDF dans `downloadTablePdf()` et `downloadOrganizerPdf()` |
+| Le logo au centre du QR code, son cartouche, le niveau de correction d'erreurs | `coderQr()` et `tracerQr()` dans `src/lib/card-kit.ts` |
+| La règle de réduction du nom sur les cartes | `composerNom()` et ses constantes dans `src/lib/card-kit.ts` |
+| Le bloc « QR code et liens » de l'administration (cases, boutons, liens) | `src/components/admin/event-links.tsx` |
+| L'adresse portée par un QR code (invités, organisateurs) | `guestUrl()` et `albumUrl()` dans `src/lib/qr.ts` |
+| L'allure du QR code des e-mails, de la page des organisateurs, du plein écran | `src/lib/qr.ts`, `src/components/qr-card.tsx` |
 | Le comportement de l'envoi des photos (essais, délais, conservation, reprise) | `src/lib/upload-queue.ts` (constantes en tête de fichier) |
 | Le stockage des photos en attente sur le téléphone | `src/lib/photo-store.ts` |
 | L'écran maintenu allumé pendant l'envoi | `src/lib/wake-lock.ts`, `AWAKE_MS` dans `src/lib/upload-queue.ts` |

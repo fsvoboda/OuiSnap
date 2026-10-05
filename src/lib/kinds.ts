@@ -29,3 +29,6 @@ export const KINDS = {
 export type Kind = keyof typeof KINDS;
 
 export const kindOf = (kind: string) => KINDS[kind as Kind] ?? KINDS.autre;
+
+// Nature connue, ou « autre » pour tout le reste (choix du dessin des cartes imprimables).
+export const kindKey = (kind: string): Kind => (kind in KINDS ? (kind as Kind) : "autre");

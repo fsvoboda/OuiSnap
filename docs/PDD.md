@@ -32,6 +32,8 @@ Du formulaire de demande de la vitrine jusqu'à la suppression d'un album, pour 
 | Clôture | Dernier jour d'accès à l'album. Ensuite, plus personne sauf l'administrateur n'y accède. |
 | Coup de cœur | Marque posée par les organisateurs sur une photo après la révélation. |
 | Bonus e-mail | Photos supplémentaires accordées à l'invité qui laisse son adresse. |
+| Carte de table | Carte A6 portant le QR code des invités, imprimée par quatre sur une page A4 et posée sur les tables. Son dessin dépend du type d'événement. |
+| Carte des organisateurs | Carte A5 en paysage, imprimée par deux sur une page A4, remise en main propre aux organisateurs. Son QR code ouvre l'album privé. |
 | Photo en attente | Photo prise ou importée qui n'a pas encore été reçue par l'album. Elle est gardée sur le téléphone de l'invité jusqu'à ce que le serveur confirme sa réception. |
 | ZIP | Fichier unique contenant toutes les photos de l'album, un dossier par photographe. |
 
@@ -170,25 +172,41 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 **Étapes**
 
-1. Dans la liste, l'administrateur clique sur « QR code et liens ». Le QR code, le PDF et les liens se déplient.
-2. « PDF pour les tables » (bouton « Préparation… » le temps de la création) télécharge un PDF : une page A4 avec quatre cartes A6 identiques à découper (table-card.ts). Chaque carte porte le logo, le type d'album, le nom de l'album, le QR code, « Scannez-moi ! » et « Visez le QR code avec l'appareil photo de votre téléphone et partagez vos photos. »
-3. « QR code seul » télécharge l'image du QR code.
-4. Deux lignes à copier : « Lien des invités (celui du QR code) » et « Lien privé de l'album (pour les organisateurs) ».
-5. Franck remet le lien privé aux organisateurs ; il peut aussi laisser faire l'e-mail d'ouverture (P12).
-6. À l'ouverture de l'album, les organisateurs reçoivent l'e-mail « Votre album est ouvert » avec le QR code et le bouton « Suivre mon album ».
-7. Sur leur page, le QR code apparaît avec « Touchez pour l'afficher en plein écran et le faire scanner à vos invités ». La page `/qr/?c=CODE` l'affiche en plein écran.
-8. Le QR code figure aussi dans l'e-mail de bienvenue des invités (« Invitez d'autres convives »).
+1. Dans la liste, l'administrateur clique sur « QR code et liens ». Deux QR codes se déplient côte à côte, avec leurs liens en dessous : à gauche « QR code des invités », à droite « QR code des organisateurs (album privé) », cadre doré et cadenas. Le second n'apparaît que si l'événement a une clé d'album.
+2. « PDF pour les tables » (bouton « Préparation… » le temps de la création) télécharge `ouisnap-tables-<code>.pdf` : une page A4 avec quatre cartes A6 identiques à découper, tracées selon le type de l'événement (RG-96, RG-97). Chaque carte porte le type d'album en capitales, le nom de l'album, le QR code des invités, une accroche et une phrase d'explication (tableau en 5.1), et le logo au pied.
+3. « QR code des invités seul » télécharge `ouisnap-qr-<code>.png`.
+4. « PDF des organisateurs » télécharge `ouisnap-organisateurs-<code>.pdf` : une page A4 avec deux cartes A5 en paysage, identiques, séparées par un trait de coupe (RG-99, RG-100). Franck les imprime et les remet en main propre aux organisateurs. « QR code privé seul » télécharge `ouisnap-qr-organisateurs-<code>.png`, image qui porte le bandeau « ALBUM PRIVÉ » (RG-103).
+5. Sous les deux QR codes, deux lignes : « Lien des invités (celui du QR code des invités) » et « Lien privé de l'album (pour les organisateurs) ». À côté de chaque lien, un bouton copie le lien et un bouton l'ouvre dans un nouvel onglet.
+6. Franck remet aux organisateurs la carte imprimée ou le lien privé ; il peut aussi laisser faire l'e-mail d'ouverture (P12).
+7. À l'ouverture de l'album, les organisateurs reçoivent l'e-mail « Votre album est ouvert » avec le QR code et le bouton « Suivre mon album ».
+8. Sur leur page, le QR code apparaît avec « Touchez pour l'afficher en plein écran et le faire scanner à vos invités ». La page `/qr/?c=CODE` l'affiche en plein écran.
+9. Le QR code figure aussi dans l'e-mail de bienvenue des invités (« Invitez d'autres convives »).
 
 **Règles de gestion**
 
-- RG-16 : le QR code ouvre `/e/?c=CODE` sur l'adresse du site (qr.ts). Les QR codes imprimés contiennent cette adresse : la changer les rendrait inutilisables.
+- RG-16 : le QR code des invités ouvre `/e/?c=CODE` sur l'adresse du site (qr.ts). Les QR codes imprimés contiennent cette adresse : la changer les rendrait inutilisables. Celui des organisateurs ouvre `/album/?k=CLÉ`, avec la même précaution (qr.ts).
 - RG-17 : le code est de 8 caractères choisis parmi des lettres et chiffres non ambigus (pas de O/0, I/1) (admin-event-save.php).
 - RG-18 : le lien privé contient une clé de 48 caractères ; il donne accès à toutes les photos après la révélation. Les organisateurs le partagent avec des personnes de confiance (mentions légales).
-- RG-19 : l'image du QR code utilisée dans les e-mails n'a rien de secret ; elle est servie sans connexion (qr.php).
+- RG-19 : l'image du QR code utilisée dans les e-mails n'a rien de secret ; elle est servie sans connexion (qr.php). Elle n'a pas de logo au centre (RG-102).
+- RG-96 : une carte de table par type d'événement : mariage, baptême, anniversaire, autre. Un type inconnu reçoit la carte « autre » (kinds.ts : `kindKey` ; table-card.ts).
+- RG-97 : toutes les cartes de table sont de la même famille : papier blanc, ni fond ni cadre le long des bords, rien à moins de 84 px (environ 7 mm) d'un bord pour que la coupe à la main et la marge non imprimable ne se voient pas ; QR code vert sapin sur une plaque blanche carrée de 780 px (66 mm) ; logo OuiSnap en signature au pied (table-card.ts, card-kit.ts : `COTE_PLAQUE`). Rien d'autre n'est dessiné dans la plaque : sa marge garantit la lecture. Les textes d'accroche et d'explication changent selon le type (tableau en 5.1).
+- RG-98 : règle du nom de l'événement, commune à toutes les cartes. Le corps diminue par pas de 4 px pour tenir sur une ligne, jusqu'à 56 px. En dessous, le nom passe sur deux lignes équilibrées, dont le corps diminue encore jusqu'au plancher de 36 px (3 mm). Si le nom ne tient toujours pas, la seconde ligne est coupée par « … ». Jamais de troisième ligne. Corps de départ : 88 px, 112 px pour les prénoms de la carte mariage (card-kit.ts : `composerNom`, `CORPS_NOM`, `CORPS_PLANCHER`).
+- RG-99 : la carte des organisateurs est personnelle : on la remet en main propre, on ne la pose jamais sur les tables. Son QR code ouvre l'album privé (organizer-card.ts).
+- RG-100 : la carte des organisateurs ne peut pas être confondue avec une carte de table : format A5 paysage au lieu d'A6, carton crème qui porte les mots, pastille « POUR LES MARIÉS », « POUR LA FAMILLE » ou « POUR LES ORGANISATEURS » selon le type, onglet sapin « ALBUM PRIVÉ » fixé au-dessus de la plaque du QR code (de sa largeur), consigne « Carte personnelle, à ne pas poser sur les tables. » ou, sur le carton, « Ce code est personnel : il ouvre votre album privé. Gardez cette carte pour vous et ne la posez pas sur les tables. » La carte du mariage porte aussi « RÉSERVÉ AUX MARIÉS » (organizer-card.ts).
+- RG-101 : contenu de la carte des organisateurs : le titre « Votre album », le nom de l'événement (règle du nom, RG-98), « Avant la révélation : suivez qui photographie et combien de photos arrivent. Les photos, elles, restent secrètes. », « Après : découvrez toutes les photos, posez vos coups de cœur et téléchargez l'album entier. », la date de révélation (voir les exceptions), et « par PourUnOuiEternel » sous le logo. Le volet du QR code reprend le motif du type de l'événement, dessiné autrement que sur la carte de table : deux petites alliances au-dessus de la plaque (mariage), des ondes sans mots autour de la goutte (baptême), une seule grande bougie sur un présentoir (anniversaire), un viseur fermé par un cadre (autre) (organizer-card.ts).
+- RG-102 : « OuiSnap » figure dans un cartouche blanc au centre des QR codes des cartes de table, de la carte des organisateurs et des images de QR code de l'administration. Le cartouche est large et bas : 30 % de la largeur du code au plus, 5 modules de haut, calé sur la grille ; ses modules sont laissés blancs en entier. Pour que le code reste lisible, il est généré avec la correction d'erreurs la plus forte qui convienne : niveau H, sinon Q, sinon M, selon que le cartouche recouvre ou non un repère du code. Si aucun niveau ne convient (ou si le code est trop petit, moins de 29 modules de côté), le code est tracé sans logo. Les autres QR codes du site (page des organisateurs, plein écran, e-mails) ne changent pas : ni logo, ni cartouche (card-kit.ts : `coderQr`, `tracerQr` ; qr.ts).
+- RG-103 : l'image du QR code des organisateurs, y compris téléchargée, porte un bandeau sapin « ALBUM PRIVÉ » au-dessus du code, pour ne pas passer pour celle des invités (card-kit.ts : `imageQr`, event-links.tsx).
+- RG-104 : les noms de fichier utilisent le code de l'événement, jamais la clé de l'album : un nom de fichier se voit dans un aperçu ou un dossier partagé (organizer-card.ts, event-links.tsx).
 
-**Exceptions.** Échec de la création du PDF : « Le PDF n'a pas pu être créé. Réessayez. » (event-links.tsx). Code inconnu sur `/qr/` : « Ce QR code n'est pas reconnu. » (join.php).
+**Exceptions**
 
-**Résultat.** Les invités ont un QR code à scanner, les organisateurs un lien privé.
+- Échec de la création d'un PDF : « Le PDF n'a pas pu être créé. Réessayez. » sous le QR code concerné (event-links.tsx).
+- Code inconnu sur `/qr/` : « Ce QR code n'est pas reconnu. » (join.php).
+- Événement sans clé d'album : seul le QR code des invités est proposé, avec son PDF.
+- Nom d'événement très long : réduit puis coupé par « … » selon RG-98 ; jamais plus de deux lignes.
+- Date de révélation de la carte des organisateurs, à l'heure de Paris, sans année : « dimanche 1er novembre à 12 h 30 » (« à 12 h » pour une heure ronde). Date absente ou illisible : « Vous serez prévenus par e-mail. » Date passée, ou album déjà dévoilé : « Votre album est dévoilé. » La date est lue au moment où le PDF est créé (organizer-card.ts : `texteRevelation`).
+
+**Résultat.** Les invités ont un QR code à scanner, les organisateurs une carte (ou un lien) privée.
 
 ### P4. Arrivée et inscription d'un invité
 
@@ -555,6 +573,24 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 (kinds.ts, mail.php)
 
+Textes des cartes de table, par type. Le type d'album est écrit en capitales au-dessus ou autour du nom (table-card.ts) :
+
+| Type | Accroche | Phrase d'explication | Particularité |
+|---|---|---|---|
+| Mariage | « Scannez, immortalisez » | « Visez ce code avec votre téléphone et partagez vos photos avec les mariés. » | Deux alliances en tête, prénoms en grand, cadre doré autour du QR code |
+| Baptême | « Scannez-moi » | « Visez ce code avec votre téléphone et photographiez. » | Goutte et ondes ; le nom et la phrase suivent les courbes |
+| Anniversaire | « Scannez, c’est la fête ! » | « Visez ce code avec l’appareil photo de votre téléphone et partagez vos photos de la fête. » | Le QR code est le gâteau, sept bougies |
+| Autre | « Scannez, déclenchez. » | « Visez ce code avec l’appareil photo de votre téléphone et partagez vos photos. » | Viseur d'appareil photo, texte aligné à gauche |
+
+Textes de la carte des organisateurs, par type (organizer-card.ts) :
+
+| Type | Pastille | Légende sous le QR code |
+|---|---|---|
+| Mariage | POUR LES MARIÉS | « Scannez pour ouvrir votre album » |
+| Baptême | POUR LA FAMILLE | « Ouvrez votre album » |
+| Anniversaire | POUR LES ORGANISATEURS | « Scannez pour ouvrir votre album » |
+| Autre | POUR LES ORGANISATEURS | « Scannez pour ouvrir votre album » |
+
 - RG-75 : le message qui demande le prénom suit la même logique : « Indiquez votre prénom pour que <les mariés | la famille | les organisateurs> sachent qui a photographié. » (kinds.ts).
 - RG-76 : les e-mails ont des titres et phrases propres au mariage (« Votre album de mariage est ouvert », « Revivez votre mariage à travers le regard de vos invités. »), au baptême (« L'album du baptême est ouvert », « Revivez ce baptême à travers le regard de vos proches. ») et à l'anniversaire (« L'album d'anniversaire est ouvert », « Revivez cet anniversaire à travers le regard de vos invités. »). Le type « Autre » reste neutre (« Votre album est ouvert », « Votre album est dévoilé ») (mail.php).
 - RG-77 : un type inconnu est traité comme « Autre » (kinds.ts, mail.php).
@@ -606,6 +642,12 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 | Demandes de réinitialisation | 3 par heure, 10 par 24 heures | admin-forgot.php |
 | Mot de passe admin | 10 caractères au moins, 72 octets au plus | admin-reset.php |
 | QR code envoyé pour les e-mails | PNG, 512 Ko au plus | admin-event-qr.php |
+| Carte de table | A6 (105 × 148,5 mm), quatre par page A4, canevas de 1240 × 1748 px (300 points par pouce) | table-card.ts |
+| Carte des organisateurs | A5 paysage (210 × 148,5 mm), deux par page A4, canevas de 2480 × 1754 px | organizer-card.ts |
+| Plaque du QR code sur une carte | carré de 780 px (66 mm) | card-kit.ts |
+| Marge de sécurité des cartes de table | 84 px (environ 7 mm) | table-card.ts |
+| Cartouche du logo dans le QR code | 30 % de la largeur au plus, 5 modules de haut ; correction d'erreurs H, sinon Q, sinon M | card-kit.ts |
+| Corps du nom sur une carte | 88 px au départ (112 px pour le mariage), 56 px au plus petit sur une ligne, 36 px au plancher sur deux lignes | card-kit.ts |
 | Conservation après clôture | six mois au plus (engagement, suppression manuelle) | confidentialite/page.tsx |
 
 ### 5.4 Contrôle de bout en bout (Playwright)

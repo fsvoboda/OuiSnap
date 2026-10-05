@@ -13,7 +13,7 @@ Ce document décrit ce que fait OuiSnap et selon quelles règles. Les processus 
 | Qui | Ce qu'il peut faire |
 |---|---|
 | **Visiteur de la vitrine** | Découvre OuiSnap sur la page d'accueil (vidéo de présentation, captures de l'appli) et envoie une demande d'album : nom, e-mail, type et date de l'événement, message facultatif. |
-| **Administrateur** (Franck) | Se connecte à `/admin/` avec un mot de passe. Crée et règle les événements, imprime les cartes QR des tables, récupère le lien de l'album des organisateurs, voit toutes les photos à tout moment, supprime des photos ou un événement entier. |
+| **Administrateur** (Franck) | Se connecte à `/admin/` avec un mot de passe. Crée et règle les événements, imprime les cartes QR des tables et les cartes des organisateurs, récupère le lien de l'album des organisateurs, voit toutes les photos à tout moment, supprime des photos ou un événement entier. |
 | **Organisateurs** (mariés, famille, hôtes) | Reçoivent un lien privé vers leur album. Avant la révélation, ils voient qui a photographié et combien. Après, ils parcourent les photos, posent des coups de cœur et téléchargent tout en un fichier ZIP. |
 | **Invités / photographes** | Scannent le QR code, donnent leur prénom (et leur e-mail s'ils veulent), photographient ou importent des photos, revoient et suppriment leurs propres photos tant que l'album est ouvert. |
 
@@ -89,9 +89,27 @@ Il voit tous les événements (état, dates, nombre de photographes, de photos e
 
 Ces messages partent une seule fois par album, à la première visite utile après l'heure prévue (page invité, album des organisateurs ou administration), ou par une tâche planifiée si elle est installée.
 
-### QR code et cartes de table
+### QR code et cartes imprimables
 
-Chaque événement a un QR code qui ouvre la page des invités. Dans l'administration, « QR code et liens » donne le PDF pour les tables (quatre cartes A6 par page A4, à découper), le QR code seul en image, le lien des invités et le lien privé des organisateurs. Les organisateurs peuvent aussi afficher le QR code en plein écran depuis leur page ou depuis l'e-mail.
+Chaque événement a deux QR codes, qui ne s'ouvrent pas sur la même page :
+
+- **Celui des invités** ouvre la page où l'on rejoint l'album. Il se pose sur les tables.
+- **Celui des organisateurs** ouvre leur album privé. Il ne se pose jamais sur les tables.
+
+Dans l'administration, le bloc « QR code et liens » les montre côte à côte. Chacun a son PDF à imprimer et son téléchargement du code seul. Le QR code des organisateurs est signalé « ALBUM PRIVÉ » jusque dans l'image téléchargée, pour ne pas le prendre pour celui des invités. Sous les deux, le lien des invités et le lien privé des organisateurs peuvent être copiés ou ouverts dans un nouvel onglet.
+
+**Cartes de table.** Le PDF des tables tient sur une page A4 : quatre cartes A6 identiques, à découper. Chaque type d'événement a sa propre carte, avec ses textes d'accroche et d'explication :
+
+- mariage : deux alliances entrelacées en tête de carte, les prénoms en grand, le QR code dans un fin cadre doré ;
+- baptême : une goutte d'or et des ondes, le nom et l'explication suivent les courbes ;
+- anniversaire : le QR code est le gâteau, avec ses bougies et son glaçage ;
+- autre événement : le QR code cadré comme dans un viseur d'appareil photo.
+
+Toutes sont de la même famille : papier blanc, sans fond ni cadre, QR code vert sapin au centre, logo OuiSnap en signature au pied. Un nom d'événement très long est réduit puis coupé plutôt que de déborder.
+
+**Carte des organisateurs.** Le PDF des organisateurs tient sur une page A4 : deux cartes identiques en format A5 paysage, à remettre en main propre aux organisateurs. Leur QR code ouvre l'album privé. La carte porte la mention « ALBUM PRIVÉ », le titre « Votre album », le nom de l'événement, ce qu'on trouve dans l'album avant et après la révélation, la date de révélation, une consigne de confidentialité (la carte est personnelle, à ne pas poser sur les tables) et « par PourUnOuiEternel » sous le logo. Son format, son carton crème et sa mention sont voulus pour qu'on ne la confonde pas avec une carte de table. Le nom du fichier ne contient jamais la clé secrète de l'album.
+
+**Logo dans le QR code.** Sur toutes les cartes et sur les QR codes de l'administration, « OuiSnap » figure dans un petit cartouche au centre du code. Le code est conçu pour rester lisible malgré ce cartouche. Les autres QR codes du site (page des organisateurs, plein écran, e-mails) n'ont pas de logo.
 
 ### Mot de passe oublié de l'administrateur
 
@@ -112,7 +130,8 @@ La politique de confidentialité annonce la suppression des albums au plus tard 
 | Page vitrine (présentation, vidéo, formulaire de demande) | en ligne |
 | Parcours invité (QR code, « Connecté ! », appareil photo, import, envoi, « Mes photos » dans l'ordre de prise de vue) | en ligne, y compris l'envoi fiable des photos (gardées sur le téléphone, reprise à la réouverture, jamais en double), mis en ligne le 5 octobre 2026 ; à essayer sur de vrais téléphones |
 | Album des organisateurs (compteurs, révélation, ZIP, coups de cœur) | en ligne |
-| Administration (événements, QR code, PDF des tables, photos, coups de cœur visibles) | en ligne |
+| Administration (événements, QR codes, PDF des tables, photos, coups de cœur visibles) | en ligne |
+| Cartes imprimables : une carte de table par type d'événement, carte des organisateurs, logo au centre du QR code | codées (octobre 2026) ; rendu jamais vérifié sur papier : les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés, mais rien n'a été imprimé. À imprimer et à essayer avec un vrai téléphone avant tout tirage |
 | Mot de passe oublié de l'administration | en ligne |
 | E-mails (bienvenue, ouverture, révélation, adaptés au type d'événement) | en ligne |
 | Mentions légales et politique de confidentialité | en ligne |

@@ -24,6 +24,7 @@ async (page) => {
   try {
     step("1. Admin : création de l'événement");
     admin = await ctx.newPage(); watch(admin, 'admin');
+    await ctx.clearCookies(); // une session admin laissée par un autre passage masquerait l'écran de connexion
     await admin.goto(`${BASE}/admin/`);
     await admin.locator('#password').fill('admin');
     await admin.getByRole('button', { name: 'Se connecter' }).click();
@@ -48,7 +49,7 @@ async (page) => {
     const guestUrl = links.find((l) => l.includes('/e/'));
     const albumUrl = links.find((l) => l.includes('/album/'));
     expect(Boolean(guestUrl && albumUrl), `liens obtenus (invités : ${guestUrl})`);
-    await card.locator('img[alt^="QR code"]').waitFor();
+    await card.locator('img[alt^="QR code"]').first().waitFor();
     await admin.screenshot({ path: `${SHOTS}/1-admin-evenement.png` });
 
     step("2. Mariés : ouverture de l'album avant révélation");

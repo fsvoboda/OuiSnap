@@ -109,7 +109,7 @@ async (page) => {
       const guestUrl = links.find((l) => l.includes('/e/'));
       const albumUrl = links.find((l) => l.includes('/album/'));
       must(Boolean(guestUrl && albumUrl), `liens obtenus (invités : ${guestUrl})`);
-      await card.locator('img[alt^="QR code"]').waitFor();
+      await card.locator('img[alt^="QR code"]').first().waitFor();
       const linksText = await card.innerText();
       noWedding(type, 'admin carte + QR code et liens', linksText, title, null);
       check(type, 'admin QR code et liens', "pas de texte dépendant du type dans le bloc (libellés neutres : « Lien des invités », « Lien privé de l'album »)", /lien privé de l'album/i.test(linksText) && /lien des invités/i.test(linksText), snippet(linksText, 0));

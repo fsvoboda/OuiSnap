@@ -97,6 +97,7 @@ async (page) => {
     await nettoyage.close();
     step("1. Admin : création de l'événement (type « autre », limite de 8 photos)");
     admin = await ctx.newPage(); watch(admin, 'admin');
+    await ctx.clearCookies(); // une session admin laissée par un autre passage masquerait l'écran de connexion
     await admin.goto(`${BASE}/admin/`);
     await admin.locator('#password').fill('admin');
     await admin.getByRole('button', { name: 'Se connecter' }).click();
