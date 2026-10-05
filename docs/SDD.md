@@ -241,7 +241,7 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 | `AdminApp` | `src/components/admin/admin-app.tsx` | Connexion, liste des événements, suppression d'un événement, demande de lien « mot de passe oublié » |
 | `EventForm` | `src/components/admin/event-form.tsx` | Création et modification d'un événement ; propose la révélation (lendemain 12h00) et la clôture (deux semaines après le début) |
 | `EventLinks` | `src/components/admin/event-links.tsx` | QR code, PDF des tables, lien des invités, lien privé de l'album |
-| `AlbumView` | `src/components/admin/album-view.tsx` | Toutes les photos d'un album pour l'administrateur, avec suppression |
+| `AlbumView` | `src/components/admin/album-view.tsx` | Toutes les photos d'un album pour l'administrateur, avec suppression. Ouvrir une photo ajoute une étape à l'historique du navigateur (`pushState`), pour que le retour arrière ramène à la galerie au lieu de quitter l'administration |
 | `PasswordReset` | `src/components/admin/password-reset.tsx` | Choix d'un nouveau mot de passe depuis le lien reçu |
 | `PhotoImage`, `LazyThumb`, `ZoomablePhoto` | `src/components/photo-view.tsx` | Chargement d'une photo protégée, vignette chargée à l'approche de l'écran, photo agrandie avec zoom |
 | `QrCard`, `QrFullScreen` | `src/components/qr-card.tsx` | QR code en vignette et en plein écran |

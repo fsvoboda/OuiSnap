@@ -35,6 +35,34 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
     setConfirming(false);
   }
 
+  // Ouvrir une photo ajoute une étape à l'historique : le bouton retour du téléphone ou du
+  // navigateur ramène alors à la galerie au lieu de quitter l'administration.
+  function view(index: number) {
+    if (open === null) window.history.pushState({ ouisnapPhoto: true }, "");
+    show(index);
+  }
+
+  function close() {
+    if (window.history.state?.ouisnapPhoto) window.history.back();
+    else show(null);
+  }
+
+  useEffect(() => {
+    const back = () => {
+      setOpen(null);
+      setConfirming(false);
+    };
+    const key = (press: KeyboardEvent) => {
+      if (press.key === "Escape" && window.history.state?.ouisnapPhoto) window.history.back();
+    };
+    window.addEventListener("popstate", back);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("popstate", back);
+      window.removeEventListener("keydown", key);
+    };
+  }, []);
+
   async function remove(photo: Photo) {
     setDeleting(true);
     try {
@@ -42,7 +70,8 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
       const rest = (photos ?? []).filter((item) => item.id !== photo.id);
       setPhotos(rest);
       // On reste sur la photo suivante, ou on ferme s'il n'en reste plus.
-      show(rest.length === 0 ? null : Math.min(open ?? 0, rest.length - 1));
+      if (rest.length === 0) close();
+      else show(Math.min(open ?? 0, rest.length - 1));
     } catch (reason) {
       setError((reason as ApiError).message);
     } finally {
@@ -106,7 +135,7 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
               <li key={photo.id}>
                 <button
                   type="button"
-                  onClick={() => show(group.start + index)}
+                  onClick={() => view(group.start + index)}
                   aria-label={`Agrandir la photo de ${photo.name}`}
                   className="relative block aspect-square w-full overflow-hidden rounded-lg active:scale-[0.98]"
                 >
@@ -133,13 +162,22 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
           aria-label={`Photo de ${current.name}`}
           className="fixed inset-0 z-10 flex touch-none flex-col bg-sapin-950"
         >
-          <div className="flex items-center justify-between gap-4 p-4">
-            <p className="font-serif text-2xl italic">{current.name}</p>
+          <div className="flex items-center gap-3 p-4">
             <button
               type="button"
-              onClick={() => show(null)}
+              onClick={close}
+              aria-label="Retour à la galerie"
+              className={`${buttonClass} shrink-0 border border-creme/30`}
+            >
+              <ArrowLeft size={18} />
+              Galerie
+            </button>
+            <p className="min-w-0 flex-1 truncate font-serif text-2xl italic">{current.name}</p>
+            <button
+              type="button"
+              onClick={close}
               aria-label="Fermer"
-              className="grid size-11 place-items-center rounded-full border border-creme/30 active:scale-95"
+              className="grid size-11 shrink-0 place-items-center rounded-full border border-creme/30 active:scale-95"
             >
               <X size={20} />
             </button>
