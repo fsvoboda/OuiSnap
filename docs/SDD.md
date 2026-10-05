@@ -4,8 +4,8 @@
 |---|---|
 | Projet | OuiSnap |
 | Document | Solution Design Document (conception technique) |
-| État du code décrit | branche `main`, commit `e777e6e` |
-| Rédigé le | 4 octobre 2026 |
+| État du code décrit | branche `main`, envoi fiable des photos compris (mis en ligne le 5 octobre 2026) |
+| Rédigé le | 4 octobre 2026, mis à jour le 5 octobre 2026 |
 
 ## Sommaire
 
@@ -173,8 +173,8 @@ OuiSnap-1/
 │   ├── PDD.md              processus métier
 │   └── SDD.md              ce document
 ├── database/
-│   ├── 001_… à 014_….sql   migrations MySQL, appliquées dans l'ordre
-│   └── local.sqlite.sql    schéma SQLite pour les tests locaux
+│   ├── 001_… à 015_….sql   migrations MySQL, appliquées dans l'ordre
+│   └── local.sqlite.sql    schéma SQLite pour les tests locaux (mis à niveau par scripts/local.sh)
 ├── scripts/
 │   ├── deploy.sh           compile et envoie le site chez OVH
 │   ├── migrate.sh          applique les migrations sur la base OVH
@@ -195,7 +195,7 @@ OuiSnap-1/
 │   │   ├── guest/          appli invité
 │   │   ├── album/          album des organisateurs
 │   │   └── admin/          administration
-│   └── lib/                fonctions partagées du front
+│   └── lib/                fonctions partagées du front (dont la file d'envoi : upload-queue.ts, photo-store.ts, wake-lock.ts)
 └── .claude/skills/pw/      tests de bout en bout et leur bilan
 ```
 
@@ -234,9 +234,9 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 
 | Composant | Fichier | Rôle |
 |---|---|---|
-| `GuestApp` | `src/components/guest/guest-app.tsx` | Chef d'orchestre de l'appli invité : connexion à l'album, écran « Connecté ! », file d'envoi, bascule entre appareil photo et « Mes photos », écrans d'attente et de clôture |
+| `GuestApp` | `src/components/guest/guest-app.tsx` | Chef d'orchestre de l'appli invité : connexion à l'album (avec nouvelles tentatives si la page est rouverte sans réseau), écran « Connecté ! », lecture de l'état de la file d'envoi et textes de statut, bascule entre appareil photo et « Mes photos », écrans d'attente et de clôture |
 | `Camera` | `src/components/guest/camera.tsx` | Appareil photo : flux vidéo, zoom, changement de caméra, déclenchement, import depuis la galerie |
-| `MyPhotos` | `src/components/guest/my-photos.tsx` | Grille des photos de l'invité, agrandissement, suppression, coups de cœur reçus |
+| `MyPhotos` | `src/components/guest/my-photos.tsx` | Grille des photos de l'invité, agrandissement, suppression, coups de cœur reçus ; en lecture seule, affiche aussi le message des photos restées sur le téléphone (propriété `notice`) |
 | `AlbumApp` | `src/components/album/album-app.tsx` | Album des organisateurs : compte à rebours et compteurs avant la révélation ; ensuite photos par invité, coups de cœur, téléchargement ZIP |
 | `AdminApp` | `src/components/admin/admin-app.tsx` | Connexion, liste des événements, suppression d'un événement, demande de lien « mot de passe oublié » |
 | `EventForm` | `src/components/admin/event-form.tsx` | Création et modification d'un événement ; propose la révélation (lendemain 12h00) et la clôture (deux semaines après le début) |
@@ -254,7 +254,10 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 
 | Fichier | Contenu |
 |---|---|
-| [`api.ts`](../src/lib/api.ts) | `api(chemin, champs)` : envoie un `POST` en `FormData` vers `/api/<chemin>.php` et lève une `ApiError` (code, message, statut HTTP) si la réponse n'a pas `ok: true`. `fetchPhoto()` : récupère une image sous forme de `Blob`. `ApiError.temporary` vaut vrai pour une coupure réseau ou un statut 500 et plus. |
+| [`api.ts`](../src/lib/api.ts) | `api(chemin, champs, options?)` : envoie un `POST` en `FormData` vers `/api/<chemin>.php` et lève une `ApiError` (code, message, statut HTTP, indicateur `foreign`) si la réponse n'a pas `ok: true`. Options : `timeout` (délai maximal en millisecondes, lecture du JSON comprise) et `signal` (annulation par l'appelant) ; sans option, le comportement est celui d'avant. Un seul `AbortController` interne et une minuterie, sans `AbortSignal.timeout` ni `AbortSignal.any` (trop récents sur Safari). Délai dépassé : `ApiError("timeout", "Connexion trop lente.", 0)` ; annulation par le signal : `ApiError("aborted", "", 0)`. `foreign` vaut vrai quand la réponse n'est pas du JSON (portail Wi-Fi, page d'un intermédiaire) : l'API répond toujours en JSON, refus compris. `fetchPhoto()` : récupère une image sous forme de `Blob`. `ApiError.temporary` vaut vrai pour une coupure réseau ou un statut 500 et plus : il est lu ailleurs que dans la file (`album-app.tsx`, `password-reset.tsx`), donc inchangé. La file d'envoi lit un autre accesseur, `ApiError.retryable` : `temporary`, ou `foreign`, ou statut 429 ou 408, ou code `timeout`. |
+| [`upload-queue.ts`](../src/lib/upload-queue.ts) | La file d'envoi des photos de l'invité : singleton `uploadQueue`, boucle d'envoi, reprise, tableau des réponses du serveur (voir [5.5](#55-file-denvoi-des-photos)). Aucun accès au navigateur à l'import : la page est prérendue en statique. |
+| [`photo-store.ts`](../src/lib/photo-store.ts) | Stockage des photos en attente sur le téléphone (IndexedDB) avec repli en mémoire : `openStore()`, `countStored()`, type `QueuedPhoto` (voir [5.5](#55-file-denvoi-des-photos)). |
+| [`wake-lock.ts`](../src/lib/wake-lock.ts) | `useWakeLock(actif)` : garde l'écran allumé pendant l'envoi (voir [5.5](#55-file-denvoi-des-photos)). |
 | [`image.ts`](../src/lib/image.ts) | `toJpeg()` : réduit une image ou une image de la vidéo en JPEG de 2560 px au plus sur le grand côté, qualité 0,85. Gère le zoom numérique en ne gardant que le centre. |
 | [`kinds.ts`](../src/lib/kinds.ts) | Les quatre natures d'événement et les textes qui en dépendent côté front. `kindOf()` retombe sur « autre » pour une valeur inconnue. |
 | [`pinch.ts`](../src/lib/pinch.ts) | `usePinch()` : pincement à deux doigts et glissement à un doigt. |
@@ -270,6 +273,7 @@ L'invité n'a pas de compte. Il est reconnu par un jeton.
 2. Sans jeton reconnu, l'écran « Connecté ! » demande le prénom (et l'e-mail, facultatif). `join` crée l'invité et renvoie un jeton de 48 caractères hexadécimaux.
 3. Le jeton est gardé dans le `localStorage` du navigateur, sous la clé `ouisnap:invite:<CODE>`. S'il rescanne le QR code avec le même navigateur, l'invité retrouve sa session.
 4. Si le `localStorage` est indisponible (navigation privée), la session dure le temps de la page.
+   Chaque photo en attente garde dans sa fiche le jeton de l'invité au moment de la prise : un renvoi part avec le même invité, ce qui garde l'anti-doublon cohérent. Si le serveur ne reconnaît plus l'invité (`session` confirmé), `GuestApp` appelle `forgetToken(code)` et revient à l'écran « Connecté ! ».
 5. Lien personnel : `/e/?c=CODE&t=JETON`. Le jeton est enregistré, puis retiré de l'adresse par `history.replaceState`. Ce lien n'existe que pour les invités qui ont laissé leur e-mail.
 
 Côté serveur, seule l'empreinte SHA-256 du jeton est gardée (`guests.token_hash`), sauf pour les invités avec e-mail : voir [10.3](#103-jetons-des-invités-et-clé-dalbum).
@@ -278,16 +282,119 @@ L'album des organisateurs n'a pas de session : la clé `k` de l'adresse est renv
 
 ### 5.5 File d'envoi des photos
 
-Dans `GuestApp` :
+Chaque photo est gardée sur le téléphone avant d'être envoyée, et ne la quitte qu'après la confirmation du serveur. La file vit dans `src/lib/upload-queue.ts`, hors de React : l'envoi continue quel que soit l'écran affiché. `GuestApp` ne fait que lire son état (`useSyncExternalStore`, comme `album-app.tsx`) et lui passer des réactions.
 
-- Chaque photo prise ou importée est d'abord convertie en JPEG réduit (`toJpeg`), puis ajoutée à une file en mémoire.
-- Les photos partent une à une vers `upload`.
-- Erreur passagère (réseau coupé, statut 500 et plus) : la file s'arrête, un nouvel essai a lieu toutes les 6 secondes et dès que le navigateur signale le retour du réseau (`online`).
-- Refus définitif : la photo est retirée de la file et le message du serveur est affiché. Code `limit` : la file est vidée. Code `closed` : la file est vidée et l'appli passe en lecture seule.
-- Tant que des photos attendent, le navigateur demande confirmation avant de fermer la page (`beforeunload`).
-- Avant d'ajouter des photos, le front applique lui-même la limite restante. Le serveur la revérifie.
+```mermaid
+stateDiagram-v2
+  [*] --> waiting: photo prise, fiche écrite
+  waiting --> [*]: accusé du serveur (ou doublon reconnu)
+  waiting --> [*]: refus définitif (limite, size, format, expired), fiche illisible
+  waiting --> failed: 5e essai échoué, ou album dévoilé (closed)
+  failed --> waiting: envoi réussi (autre photo), ou nouvelle ouverture de la page
+```
 
-La file vit en mémoire : si la page est fermée ou rechargée, les photos pas encore envoyées sont perdues.
+#### Magasin sur le téléphone (`photo-store.ts`)
+
+Base IndexedDB `ouisnap`, version 1, sans dépendance npm. Deux magasins :
+
+| Magasin | Clé | Contenu |
+|---|---|---|
+| `queue` | `seq` (automatique), index `code` | Les fiches. L'ordre des `seq` est l'ordre d'envoi. |
+| `bytes` | clé hors ligne égale au `seq` | L'image, en `ArrayBuffer` |
+
+Pourquoi deux magasins : à la réouverture, seules les fiches sont chargées ; quarante photos de 2 Mo en mémoire feraient fermer l'onglet par le téléphone. Pourquoi un `ArrayBuffer` et non un `Blob` : sur iPhone, un `Blob` relu après réouverture peut être vide.
+
+- Écriture : une seule transaction sur les deux magasins, résolue sur `oncomplete`. L'envoi d'une photo attend la fin de son écriture.
+- Relecture : avant chaque envoi, fiche et octets sont lus en une transaction.
+- Purge après accusé : les deux enregistrements sont supprimés en une transaction.
+- Délais : ouverture de la base, 3 secondes (`OPEN_TIMEOUT_MS`) ; chaque transaction, 8 secondes (`TRANSACTION_TIMEOUT_MS`). Une transaction qui ne répond pas est annulée. Sur certains Safari, l'ouverture ou une base revenue de l'arrière-plan ne répond jamais : sans ces délais, l'écriture d'une photo ne finirait pas et bloquerait les suivantes.
+- Chaque opération rouvre la base une fois en cas d'erreur, puis réessaie.
+- Repli en mémoire : `openStore()` ne rejette jamais. Absence d'`indexedDB`, erreur ou ouverture trop longue : tout se fait en mémoire. Si l'écriture d'une photo échoue ou ne répond pas au bout de 8 secondes (stockage plein, base fermée), la photo passe en mémoire avec un `seq` négatif (pour ne pas croiser ceux de la base). Le drapeau `durable` vaut alors faux, et l'écran demande de ne pas fermer la page. Une transaction qui aboutit après le délai a pu écrire la fiche : elle existe alors en double, part deux fois sous le même identifiant, et le serveur n'en garde qu'une.
+- `update`, `remove` et `purge` n'échouent jamais aux yeux de l'appelant : au pire, une fiche qui aurait dû disparaître repart à la prochaine ouverture, et le serveur reconnaît la photo.
+- `countStored(code)` : nombre de fiches d'un événement, sans ouvrir la file ; sert à l'écran d'une page rouverte sans réseau. Rend 0 si le stockage ne répond pas.
+
+#### Fiche d'une photo
+
+| Champ | Rôle |
+|---|---|
+| `seq` | Clé donnée par la base ; ordre d'envoi |
+| `id` | Identifiant client, 32 caractères hexadécimaux tirés par `crypto.getRandomValues` (même forme que `photos.file`) ; envoyé au serveur comme `client_id` |
+| `code` | Code de l'événement, en majuscules |
+| `token` | Jeton de l'invité au moment de la prise |
+| `createdAt` | Date de prise, en millisecondes |
+| `bytes` | Poids de l'image, recontrôlé à la relecture |
+| `attempts` | Essais échoués avec une réponse ou un délai dépassé |
+| `state` | `waiting` ou `failed` ; « en cours d'envoi » n'est jamais écrit |
+| `reason` | Code de l'erreur, si `failed` (`timeout`, `server`, `closed`…) |
+
+#### Boucle d'envoi
+
+`run()` envoie la première fiche `waiting`, une seule à la fois, dans l'ordre des `seq`. Avant chaque envoi (`sendOne`) :
+
+1. Si l'album était indiqué pas encore ouvert, l'état est demandé par `join` (quelques octets) au lieu de renvoyer la photo entière ; l'envoi ne repart que si l'état n'est plus `upcoming`.
+2. Si le jeton de la fiche n'est plus reconnu mais que l'invité s'est réinscrit depuis, la fiche prend le nouveau jeton.
+3. Relecture de la fiche et des octets. Fiche absente : un autre onglet l'a envoyée, elle sort de la liste et le compteur est redemandé par `join`. Octets absents, poids différent ou début autre que `FF D8` : fiche supprimée et message « 1 photo en attente était illisible et n'a pas pu être envoyée. »
+4. `api("upload", { token, client_id, photo }, { timeout, signal })`.
+
+Délai maximal d'un envoi : 60 secondes, plus 30 secondes par Mo, plafonné à 180 secondes (0,5 Mo : 75 s ; 3 Mo : 150 s). `JOIN_TIMEOUT_MS` : 30 secondes pour les appels `join`.
+
+Les constantes sont en tête de `upload-queue.ts` : `KEEP_MS` (7 jours), `MAX_ATTEMPTS` (5), `RETRY_SECONDS` (6, 12, 24, 48, 60), `UPCOMING_RETRY_SECONDS` (60), `HIDDEN_ABORT_MS` (10 s), `AWAKE_MS` (3 minutes).
+
+#### Réponses du serveur et traitement
+
+| Réponse | Traitement |
+|---|---|
+| Succès (y compris `duplicate: true`) | Fiche et octets supprimés, `onCount` avec le compteur du serveur (seulement si la fiche est celle de l'invité en cours). Les photos mises de côté (hors `closed`) repassent en `waiting`, essais remis à zéro, placées après celles qui attendent. |
+| `limit` (409) | Les photos `waiting` du même invité sont supprimées, `onLimit(nombre)`, message « Limite de N photos atteinte : X photos n'ont pas été envoyées. » |
+| `closed` (403, album dévoilé) | Toutes les fiches passent en `failed` avec `reason: "closed"`, gardées. `onEnd("closed", nombre)` : lecture seule et message sur « Mes photos ». La file s'arrête. |
+| `expired` (410) | Fiches de l'événement supprimées. `onEnd("expired", nombre)`. La file s'arrête. |
+| `upcoming` (403) | File en pause (`stalled = "upcoming"`), fiches gardées, nouvel essai à 60 s, avec contrôle de l'état par `join` avant chaque renvoi. |
+| `session` (401) | Vérification par `join(code, token)`, voir ci-dessous. |
+| `size`, `format` | Fiche supprimée, message du serveur, les suivantes continuent. |
+| Réseau coupé | Pause, pas d'essai compté. |
+| Délai dépassé, 5xx, 429, 408, réponse non JSON, `upload`, code inconnu | `attempts + 1`, pause ; au 5e essai la fiche passe en `failed` et la suivante part. |
+| Annulation (`aborted`) | Envoi relancé sans compter d'essai. |
+
+Vérification d'un `session`. Un envoi trop gros pour PHP ressemble à une session expirée : au-delà de `post_max_size`, PHP vide `$_POST`, donc `current_guest()` répond 401 `session`. La file demande donc à `join` si l'invité est connu :
+
+- `join` répond 404 `event` : fiches de l'événement supprimées, `onGone`, écran d'erreur.
+- `join` renvoie le jeton : fausse alerte, l'échec compte pour un essai.
+- `join` renvoie `token: null` : fiches gardées, jeton oublié (`onSessionLost`), retour à l'écran « Connecté ! ». Après réinscription, les fiches dont le jeton est inconnu prennent le nouveau jeton.
+
+#### Déclencheurs de reprise
+
+| Déclencheur | Effet |
+|---|---|
+| Fin de `open()`, fin de l'écriture d'une photo (`add`), `setToken` | `kick()` : essai immédiat, délais remis à zéro |
+| Événement `online` | `kick(true)` : essai immédiat même en pause |
+| `visibilitychange` vers visible, `pageshow` avec `persisted` | `resume()` : envoi en vol annulé puis relancé sans compter d'essai si la page est restée masquée plus de 10 s ; puis `kick()` |
+| Minuterie | 6, 12, 24, 48 puis 60 s, remise à 6 s après un succès ou un déclencheur ; 60 s si l'album n'est pas ouvert |
+
+Un `kick()` ordinaire ne fait rien quand la file est en pause pour `server` ou `slow` et qu'un essai est déjà programmé : chaque essai échoué est compté, et cinq photos prises coup sur coup pendant une panne épuiseraient les essais en quelques secondes. Seul `online` force l'essai. Un onglet masqué continue d'envoyer.
+
+Deux onglets : pas de verrou (sur iPhone, un onglet gelé qui tiendrait un verrou bloquerait l'onglet visible). Chacun a son garde-fou en mémoire ; le pire cas est une photo envoyée deux fois, que le serveur dédoublonne.
+
+#### À l'ouverture de la page (`start`)
+
+1. `openStore()`, puis purge des fiches de plus de 7 jours, tous événements confondus.
+2. Lecture des fiches du code. `expired` ou `gone` (code inconnu) : toutes supprimées (message si `expired`). `closed` : toutes en `failed`, `onEnd("closed", nombre)`. Sinon : les fiches `failed` repassent en `waiting` avec `attempts: 0`, et les fiches lues sont marquées « retrouvées ».
+3. Écouteurs `online`, `pageshow` et `visibilitychange` posés une fois pour toute la vie de la page.
+
+`GuestApp` appelle `uploadQueue.open(...)` sans l'attendre, puis `setToken`. `open()` est idempotent : un second appel ne fait que remplacer les réactions (l'effet de démarrage tourne deux fois en développement).
+
+Page rouverte sans réseau : l'appel `join` de `GuestApp` a un délai maximal de 30 secondes et, sur erreur passagère (`network` ou `retryable`), est retenté automatiquement : événement `online`, retour sur la page (`visibilitychange`), puis minuterie de 6, 12, 24, 48 puis 60 secondes. L'écran d'erreur affiche le nombre de photos gardées, lu par `countStored`. Dès que `join` répond, la file s'ouvre normalement.
+
+#### État lu par l'interface
+
+Instantané immuable, remplacé et jamais modifié (sinon `useSyncExternalStore` boucle) : `{ waiting, restored, blocked, stalled, durable, awake }`. `stalled` vaut `null`, `"network"`, `"slow"`, `"server"` ou `"upcoming"`. `getServerSnapshot` renvoie une constante vide : la page est prérendue. La fonction pure `sendingStatus()` de `guest-app.tsx` en tire le texte de statut ; les textes figurent dans le [PDD](PDD.md) (P5). `notice` garde la priorité sur ce statut.
+
+Compteurs : `taken = count + waiting`, borné à la limite ; les fiches `failed` ne comptent pas. « Vous avez envoyé vos N photos. Merci ! » seulement si plus rien n'attend. Le front applique lui-même la limite restante avant d'ajouter ; le serveur la revérifie.
+
+Fermeture de la page : tant que `waiting > 0`, `beforeunload` demande confirmation.
+
+#### Écran allumé (`wake-lock.ts`)
+
+`useWakeLock(actif)` demande `navigator.wakeLock.request("screen")` quand la page est visible, la redemande à chaque retour au premier plan (le téléphone relâche le verrou quand la page est masquée) et la relâche au nettoyage. Tous les rejets sont avalés : sans effet si le navigateur ou le téléphone refuse. `actif` vaut `queue.awake` : vrai tant que des photos attendent et qu'il y a eu un progrès (ajout, accusé, reprise) depuis moins de 3 minutes.
 
 ### 5.6 Appareil photo
 
@@ -307,7 +414,7 @@ Dans `Camera` :
 
 Il n'y a ni manifeste d'application ni service worker dans le dépôt : `public/` ne contient que `.htaccess`, `robots.txt`, `sitemap.xml`, `media/` et `api/`. L'appli est une page web, sans installation et sans fonctionnement hors ligne.
 
-Ce qui s'en approche : la couleur de thème par page (`viewport.themeColor`), `viewportFit: "cover"` pour occuper tout l'écran, et la file d'envoi qui tolère les coupures de réseau.
+Ce qui s'en approche : la couleur de thème par page (`viewport.themeColor`), `viewportFit: "cover"` pour occuper tout l'écran, et la file d'envoi ([5.5](#55-file-denvoi-des-photos)) qui garde les photos sur le téléphone, tolère les coupures de réseau et reprend à la réouverture de la page. Elle repose sur IndexedDB et non sur un service worker : rien ne part page fermée.
 
 ### 5.8 Charte
 
@@ -370,10 +477,21 @@ Codes d'erreur communs :
 | Fichier | Rôle | Accès | Entrées | Réponse | Erreurs propres |
 |---|---|---|---|---|---|
 | `join.php` | Découvrir un événement, reprendre une session ou s'inscrire | Public, avec le code | `code` ; puis `token`, ou `name` et `email` (facultatif) | `token`, `name`, `event` (`title`, `kind`, `maxPhotos`, `emailBonus`, `state`, `opensAt`), `count` | 404 `event` (code inconnu), 403 `upcoming`, 403 `closed`, 410 `expired`, 409 `full` (nombre de photographes atteint), 422 `email` |
-| `upload.php` | Recevoir une photo | Jeton | `token`, fichier `photo` | `id`, `count` | 400 `upload`, 413 `size` (plus de 15 Mo), 415 `format` (pas un JPEG, ou côté de plus de 8000 px), 409 `limit`, 403 `upcoming` / `closed`, 410 `expired` |
+| `upload.php` | Recevoir une photo | Jeton | `token`, fichier `photo`, `client_id` (facultatif : 32 caractères hexadécimaux) | `id`, `count`, et `duplicate: true` si la photo avait déjà été reçue | 400 `client_id` (identifiant mal formé), 400 `upload`, 413 `size` (plus de 15 Mo), 415 `format` (pas un JPEG, ou côté de plus de 8000 px), 409 `limit`, 403 `upcoming` / `closed`, 410 `expired`, 500 `server` |
 | `photos.php` | Lister ses photos | Jeton | `token` | `photos` (`id`, `width`, `height`, `liked`), `count` | 410 `expired` |
 | `photo.php` | Image d'une de ses photos | Jeton | `token`, `id`, `size` (`thumb` ou autre) | Image JPEG | 404 `photo`, 410 `expired` |
 | `delete.php` | Supprimer une de ses photos | Jeton | `token`, `id` | `count` | 404 `photo`, 403 `upcoming` / `closed`, 410 `expired` |
+
+Ordre des contrôles de `upload.php`, qui compte :
+
+1. `current_guest()` : 401 `session` si le jeton est inconnu.
+2. Lecture de `client_id`. Vide : `null`, l'envoi est accepté comme avant (page chargée avant cette version). Non conforme à `/^[a-f0-9]{32}$/` : 400 `client_id`.
+3. Si l'identifiant est déjà connu pour cet invité (`SELECT id FROM photos WHERE guest_id = ? AND client_id = ?`) : réponse 200 `{ ok, id, count, duplicate: true }`, sans rien écrire. Ce contrôle passe **avant** `require_open`, les contrôles de fichier et la limite : une photo déjà reçue n'est jamais refusée, même si l'album s'est fermé ou la limite atteinte depuis. La fonction `reply_if_received()` porte ce contrôle.
+4. `require_open()`, contrôles du fichier, limite, écriture du fichier et de la vignette (inchangés).
+5. `INSERT` dans un `try/catch (PDOException)` : en cas d'échec, fichier et vignette sont supprimés (`delete_photo_files`) ; si le code SQLSTATE est `23000` (violation de la clé unique : le même envoi est arrivé deux fois en même temps), la réponse est celle du point 3 si l'autre enregistrement existe maintenant ; sinon `error_log` et 500 `server`.
+6. Recomptage du rang pour la limite, puis réponse finale (inchangés).
+
+Le SQL est commun aux deux moteurs : ni `INSERT IGNORE` ni `ON CONFLICT`. Le code `23000` est le même pour MySQL et SQLite d'après leur documentation ; ce chemin n'a pas été exécuté (aucun test ne peut envoyer deux fois le même identifiant en même temps : `php -S` traite une requête à la fois).
 
 Les trois usages de `join.php` :
 
@@ -512,6 +630,7 @@ erDiagram
     smallint height
     int bytes
     tinyint liked
+    char client_id
     timestamp created_at
   }
   requests {
@@ -603,7 +722,10 @@ Le même prénom peut exister plusieurs fois dans un événement.
 | `width`, `height` | SMALLINT | Dimensions en pixels |
 | `bytes` | INT | Poids du fichier |
 | `liked` | TINYINT(1), défaut 0 | Coup de cœur des organisateurs |
+| `client_id` | CHAR(32) ascii, nul possible | Identifiant donné à la photo par le téléphone. Nul pour les photos reçues avant la migration 015 et pour celles d'une page chargée avant cette version. |
 | `created_at` | TIMESTAMP | Réception |
+
+Clé unique `photos_guest_client (guest_id, client_id)` : un même envoi reçu deux fois ne s'enregistre qu'une fois pour un invité. Plusieurs valeurs nulles sont admises par MySQL comme par SQLite, donc les photos sans identifiant ne se gênent pas. L'unicité est par invité : le renvoi d'une photo part avec le même jeton, donc le même invité.
 
 #### `requests` — demandes de la page vitrine
 
@@ -649,6 +771,7 @@ Fichiers de [`../database/`](../database/), appliqués dans l'ordre de leur nom.
 | `012_login_attempts.sql` | Table `admin_login_attempts` |
 | `013_requests.sql` | Table `requests` |
 | `014_password_reset.sql` | Tables `settings` et `admin_password_resets` |
+| `015_photo_client_id.sql` | `photos.client_id` (CHAR(32), jeu de caractères `ascii`, comparaison `ascii_bin`, nul possible) et clé unique `photos_guest_client (guest_id, client_id)`. Une seule instruction `ALTER TABLE`. L'ancien `upload.php` nomme ses colonnes : la colonne en plus ne le gêne pas, donc la migration peut passer avant le déploiement. |
 
 Les migrations 002, 003 et 005 contiennent des données de démonstration. Sur une base neuve, elles créent un événement `DEMO2026` en production : le supprimer depuis l'administration s'il n'est pas voulu.
 
@@ -665,7 +788,7 @@ Les migrations 002, 003 et 005 contiennent des données de démonstration. Sur u
 | Index | Index sur `guests.event_id`, `photos.guest_id`, `photos.event_id`, `admin_login_attempts.failed_at` | Seulement les index uniques et celui de `admin_password_resets.created_at` |
 | Données de départ | `DEMO2026` | `DEMO2026` (aujourd'hui, pas encore révélé) et `PASSE2026` (révélé) |
 
-Conséquence pratique : **toute migration MySQL doit être reportée à la main dans `local.sqlite.sql`**, sinon l'appli locale ne correspond plus à la production. Comme le fichier ne modifie pas une base existante, il faut aussi supprimer `.local/dev.sqlite` (ou modifier la base à la main) pour que le changement prenne effet.
+Conséquence pratique : **toute migration MySQL doit être reportée à la main dans `local.sqlite.sql`**, sinon l'appli locale ne correspond plus à la production. `CREATE TABLE IF NOT EXISTS` ne modifie pas une table existante : pour une colonne ajoutée, la base locale déjà créée est mise à niveau par `scripts/local.sh`, qui lit le tableau `$added` (table, colonne, type) dans son bloc `php -r` et lance `ALTER TABLE … ADD COLUMN` pour chaque colonne absente (`PRAGMA table_info`). Cette mise à niveau passe **avant** l'exécution de `local.sqlite.sql`, sinon le `CREATE UNIQUE INDEX` de la colonne neuve échouerait sur une base ancienne et arrêterait le script. Pour `photos.client_id`, `local.sqlite.sql` porte `client_id TEXT NULL` dans la table et `CREATE UNIQUE INDEX IF NOT EXISTS photos_guest_client ON photos (guest_id, client_id)` après elle ; `$added` contient `["photos" => ["client_id" => "TEXT NULL"]]`. Piège : le bloc `php -r '…'` est entouré d'apostrophes shell ; **aucune apostrophe n'y est permise, même en commentaire**. Une base neuve (aucune colonne présente) est ignorée par la mise à niveau : le fichier SQL crée tout. Pour repartir de zéro, supprimer `.local/dev.sqlite`.
 
 Le code PHP n'emploie que du SQL commun aux deux moteurs. Le seul test du moteur est dans `db()`, pour le `PRAGMA`.
 
@@ -874,7 +997,7 @@ Ces fichiers ne s'appliquent qu'en production (Apache). En local, `lib.php`, `ma
 
 | Envoi | Contrôles |
 |---|---|
-| Photo (`upload.php`) | Vrai fichier envoyé (`is_uploaded_file`), 15 Mo au plus, contenu reconnu comme JPEG par `getimagesize`, côtés de 8000 px au plus, limite de l'invité vérifiée avant puis après l'insertion (deux envois simultanés ne passent pas la limite). Le nom d'origine est ignoré : le fichier reçoit un nom aléatoire et l'extension `.jpg`. |
+| Photo (`upload.php`) | Vrai fichier envoyé (`is_uploaded_file`), 15 Mo au plus, contenu reconnu comme JPEG par `getimagesize`, côtés de 8000 px au plus, limite de l'invité vérifiée avant puis après l'insertion (deux envois simultanés ne passent pas la limite). Le nom d'origine est ignoré : le fichier reçoit un nom aléatoire et l'extension `.jpg`. L'identifiant `client_id` doit avoir exactement la forme de 32 caractères hexadécimaux (sinon 400) ; il n'entre jamais dans un nom de fichier ni dans une requête non préparée. Un identifiant déjà connu est traité avant tout autre contrôle, mais seulement pour l'invité qui le présente avec son propre jeton : la réponse `duplicate` ne révèle rien sur les photos d'un autre invité. |
 | QR code (`admin-event-qr.php`) | Session d'administration, vrai fichier envoyé, PNG, 512 Ko au plus. Le nom vient du code de l'événement lu en base, pas de la requête. |
 
 Les fichiers sont rangés hors du dossier web : même un fichier malveillant ne pourrait pas être exécuté par une adresse.
@@ -1025,7 +1148,9 @@ Deux points à savoir :
 3. **Déployer.** `npm run deploy`. En cas de doute, simuler d'abord avec `-- --dry-run`.
 4. **Vérifier en ligne** ([13.2](#132-vérifications-après-mise-en-ligne)).
 
-**Pourquoi la migration passe avant le déploiement.** Le nouveau code attend le nouveau schéma. Le cas le plus net : sans les tables de `014_password_reset.sql`, `admin_password()` échoue et l'administration refuse toute connexion. Une colonne ajoutée en avance, elle, ne gêne pas l'ancien code.
+**Pourquoi la migration passe avant le déploiement.** Le nouveau code attend le nouveau schéma. Le cas le plus net : sans les tables de `014_password_reset.sql`, `admin_password()` échoue et l'administration refuse toute connexion. Une colonne ajoutée en avance, elle, ne gêne pas l'ancien code : c'est le cas de `015_photo_client_id.sql` (l'ancien `upload.php` nomme ses colonnes).
+
+**Invité avec la page ouverte pendant la mise en ligne.** Sa page déjà chargée continue de fonctionner avec l'ancien code : elle envoie les photos sans `client_id`, que le nouveau `upload.php` accepte comme avant (sans anti-doublon). Les photos en attente d'une page de la nouvelle version sont gardées sur le téléphone et reprises à la réouverture. Faire la mise en ligne hors d'un événement en cours reste préférable. Retour arrière : redéployer le commit précédent ; la colonne reste, sans effet.
 
 **Exception : la toute première installation.** Le script de migration lit les accès MySQL dans le `api/config.php` présent sur le serveur. Sur un hébergement vide, il faut donc déployer une première fois, puis migrer.
 
@@ -1063,7 +1188,7 @@ Le script temporaire porte un nom aléatoire et il est supprimé même en cas d'
 |---|---|
 | Page vitrine | S'affiche, la vidéo se lance |
 | `/admin/` | La connexion fonctionne, la liste des événements s'affiche |
-| Un événement de test | Création, « QR code et liens », ouverture du lien des invités sur un téléphone, une photo envoyée |
+| Un événement de test | Création, « QR code et liens », ouverture du lien des invités sur un téléphone, une photo envoyée ; puis, pour l'envoi fiable : mode avion, 3 photos, fermeture de l'onglet, réouverture avec le réseau, les 3 photos partent |
 | Lien privé de l'album | Compteurs visibles, photos masquées avant la révélation |
 | `/api/lib.php` et `/api/config.php` dans un navigateur | Accès refusé (403) |
 | Adresse en `http://` | Redirigée vers `https://` |
@@ -1075,7 +1200,7 @@ Penser à supprimer l'événement de test ensuite.
 
 1. Créer `database/NNN_nom.sql`, avec le numéro suivant sur trois chiffres. Le script applique les fichiers dont le nom commence par un chiffre, triés par nom.
 2. Écrire du SQL MySQL. **Chaque instruction se termine par un point-virgule en fin de ligne** : le script découpe le fichier sur ce motif. Ne pas terminer une ligne de commentaire par un point-virgule.
-3. Reporter le changement dans `database/local.sqlite.sql`, en syntaxe SQLite, puis recréer ou ajuster `.local/dev.sqlite`.
+3. Reporter le changement dans `database/local.sqlite.sql`, en syntaxe SQLite. Pour une colonne ajoutée à une table existante, l'ajouter aussi au tableau `$added` de `scripts/local.sh` (voir [7.4](#74-différences-entre-mysql-et-sqlite-local)) : les bases locales déjà créées sont ainsi mises à niveau par `npm run local`. Pas d'apostrophe dans ce bloc.
 4. Tester en local.
 5. `npm run migrate`, puis `npm run deploy`.
 
@@ -1128,18 +1253,19 @@ Il n'y a pas de tests unitaires. Les seuls tests automatisés sont les tests de 
 
 Ils ne se lancent pas par une commande npm : ils sont joués par un agent, à travers le serveur MCP Playwright (outil `browser_run_code_unsafe`, qui exécute un fichier de script). Le mode d'emploi complet est dans [`SKILL.md`](../.claude/skills/pw/SKILL.md).
 
-### 14.2 Les trois tests
+### 14.2 Les quatre tests
 
 | Test | Script | Parcours |
 |---|---|---|
 | `mariage` | `scripts/e2e-mariage.js` | 11 étapes. L'administrateur crée un mariage ; les mariés ouvrent l'album avant la révélation ; un invité s'inscrit et prend 5 photos ; les mariés voient les compteurs mais pas les photos ; l'administrateur supprime la photo 2 ; il avance la révélation ; les mariés découvrent l'album et posent 3 coups de cœur ; l'administrateur les voit ; l'invité retrouve ses 4 photos dans l'ordre, en lecture seule, avec les coups de cœur. |
 | `mot-de-passe` | `scripts/e2e-mot-de-passe.js` | 10 étapes. Session ouverte avec le mot de passe actuel ; demande du lien ; contrôle de l'e-mail HTML ; ouverture du lien ; saisies refusées sans consommer le lien ; nouveau mot de passe ; ancien mot de passe et ancienne session refusés ; connexion avec le nouveau ; lien à usage unique et lien mal formé ; plafond de demandes. |
 | `types` | `scripts/e2e-types.js` | 7 étapes pour chacune des 4 natures d'événement. Création ; album avant la révélation ; page invité (accueil, prénom vide, inscription, une photo, « Mes photos ») ; QR code plein écran ; révélation avancée ; album après la révélation ; album vide après suppression de la photo. Vérifie que les textes s'adaptent à la nature. |
+| `reprise` | `scripts/e2e-reprise.js` | 10 étapes, titre d'événement « Test reprise E2E <6 chiffres> » (type « autre », limite de 8 photos). L'administrateur crée l'événement ; l'invité s'inscrit et envoie 1 photo en ligne (compteur 1, IndexedDB vide) ; réseau coupé, 3 photos gardées (« Réseau indisponible », « 4 / 8 photos », 3 fiches) ; page fermée, réseau rétabli, nouvelle page : pas d'écran « Connecté ! », « 3 photos retrouvées », envois dans l'ordre des `seq`, IndexedDB vide ; envoi coupé, 1 photo, rechargement, photo retrouvée et envoyée ; réponse perdue (`route.fetch()` puis `route.abort()`) : second envoi avec `duplicate: true` et le même `id`, pas de photo en double ; navigateur sans stockage (`indexedDB` neutralisé) : message « ne fermez pas cette page » puis envoi ; limite atteinte pendant une coupure ; depuis la page admin, renvoi d'un identifiant connu (200 `duplicate` malgré la limite atteinte) puis identifiant mal formé (400) ; album dévoilé avant l'envoi (lecture seule, message des photos non envoyées, aucun envoi après rechargement). |
 
 ### 14.3 Comment ils se jouent
 
-1. **Vérifier le serveur local** : `bash .claude/skills/pw/scripts/base-locale.sh etat`. La commande vérifie que le port 8000 répond et que `out/api/config.php` est bien la configuration SQLite. Elle refuse de continuer sinon.
-2. **Jouer chaque test** par l'outil Playwright, avec le chemin du script. Un test dure 10 à 30 secondes.
+1. **Vérifier le serveur local** : `bash .claude/skills/pw/scripts/base-locale.sh etat`. La commande vérifie que le port 8000 répond, que `out/api/config.php` est bien la configuration SQLite, et que la table `photos` a la colonne `client_id` (`pragma_table_info`). Elle refuse de continuer sinon : « Relancer npm run local » met la base à niveau.
+2. **Jouer chaque test** par l'outil Playwright, avec le chemin du script. Un test dure 10 à 30 secondes. Sans précision, jouer les quatre.
 3. **Pour `mot-de-passe`**, avant et après : `base-locale.sh mdp`. Le test change le mot de passe local et épuise le plafond de demandes ; cette commande remet le mot de passe à `admin`.
 4. **Ajouter le passage au bilan** : `node .claude/skills/pw/scripts/rapport.mjs ajouter <test>`.
 5. **Publier la page de bilan**.
@@ -1155,7 +1281,8 @@ Ils ne se lancent pas par une commande npm : ils sont joués par un agent, à tr
 | E-mails | Rien ne part en local. Le test `mot-de-passe` ouvre le fichier HTML écrit dans `.local/` et clique sur son bouton. |
 | Journal du test | Une ligne `N. Titre` par étape, puis `  ✓ texte` par contrôle réussi. `  ✗ texte` note un constat qui n'arrête pas le test. Un contrôle faux arrête le test et prend une capture d'écran de chaque page ouverte. |
 | Enregistrement du résultat | Le script s'exécute dans le serveur Playwright, sans accès aux fichiers. Il pose son résultat dans le `localStorage` d'une page du site, puis demande à Playwright d'écrire l'état du navigateur dans `.playwright-mcp/dernier-<test>.json`. `rapport.mjs` l'en extrait. |
-| Captures | Dans `.playwright-mcp/e2e/`. |
+| Captures | Dans `.playwright-mcp/e2e/`. Le test `reprise` en prend six (étapes 3, 4, 6, 7, 8 et 10). |
+| Test `reprise` | Caméra factice injectée par `addInitScript` du contexte, pour qu'elle vaille aussi après une réouverture de page. Réseau coupé par `setOffline`. Envois ralentis, coupés ou rejoués par `route` (`route.fetch()` puis `route.abort()` pour perdre une réponse). Reprise sans attendre la minuterie : `dispatchEvent(new Event('online'))`. Le contenu d'IndexedDB (fiches et nombre d'octets) est lu depuis la page. Les envois directs partent de la page admin, parce que la `route` de la page invité les intercepterait. Les erreurs de console attendues (réseau coupé, 409, 403, 400) sont déclarées dans `expected` de `rapport.mjs`. |
 | Chemins | Les scripts contiennent le chemin absolu du projet (`/Volumes/Mac500/DEV/OuiSnap-1`). À adapter si le dépôt est déplacé. |
 
 ### 14.5 Bilan et publication
@@ -1176,7 +1303,8 @@ D'après les limites déclarées dans `rapport.mjs` et la lecture des scripts :
 - L'envoi réel des e-mails par OVH, et le contenu des e-mails autres que celui de réinitialisation.
 - L'expiration du lien de réinitialisation au bout d'une heure.
 - La page vitrine et le formulaire de demande.
-- Les limites (nombre de photographes, photos par photographe, bonus e-mail), la file d'envoi en cas de coupure de réseau, le lien personnel `?t=`.
+- Les limites (nombre de photographes, photos par photographe, bonus e-mail), le lien personnel `?t=`.
+- Pour la file d'envoi (couverte en partie par `reprise`), ce que Playwright ne peut pas simuler : un onglet tué ou gelé par le téléphone ; l'écran verrouillé et le maintien réel de l'écran allumé ; Safari sur iPhone et ses défauts de stockage ; la vraie navigation privée et un quota réellement plein (l'absence de stockage est imitée en neutralisant `indexedDB`) ; le navigateur intégré d'une autre application ; deux envois vraiment simultanés du même identifiant (`php -S` traite une requête à la fois) ; MySQL ; le délai maximal de 75 à 180 secondes.
 - La production : MySQL, Apache, `.htaccess`, HTTPS. Tout est joué sur SQLite et le serveur intégré de PHP.
 - Les scripts de mise en ligne et de migration.
 
@@ -1192,11 +1320,19 @@ Uniquement ce que le code ou le README d'origine confirment.
 |---|---|
 | Archive ZIP : 4 Go et 65 535 fichiers au plus | `album-zip.php` |
 | Photo : JPEG, 15 Mo et 8000 px de côté au plus à la réception ; 2560 px après réduction par l'appli | `upload.php`, `src/lib/image.ts` |
-| Les photos en attente d'envoi sont perdues si la page est fermée | `guest-app.tsx` (file en mémoire) |
+| Page fermée : rien ne part. Les photos en attente sont gardées sur le téléphone et repartent à la prochaine ouverture de la page | `upload-queue.ts` |
+| Le téléphone peut effacer le stockage de la page s'il manque de place ; Safari l'efface après 7 jours sans visite : les photos en attente sont alors perdues | `photo-store.ts` |
+| Navigation privée : les photos en attente survivent à un rechargement, pas à la fermeture de l'onglet, et l'appli ne peut pas le détecter | `photo-store.ts` |
+| Navigateur intégré d'une autre application : stockage à part, aucune détection prévue | `photo-store.ts` |
+| Très mauvais réseau : une photo de 3 Mo ne passe pas sous environ 160 kbit/s ; mise de côté après 5 essais, sans être supprimée | `upload-queue.ts` |
+| Une photo mise de côté puis envoyée plus tard arrive après les suivantes | `upload-queue.ts` |
+| Photo supprimée dans « Mes photos » alors que la réponse de son envoi s'était perdue : un renvoi la recrée (cas très rare) | `upload.php` |
+| Photos en attente quand l'album est dévoilé : non envoyées, gardées sur le téléphone avec un message. Choix par défaut, pas encore tranché par le propriétaire | `upload-queue.ts` |
+| Photos en attente gardées 7 jours sur le téléphone. Choix par défaut, pas encore tranché | `KEEP_MS` dans `upload-queue.ts` |
 | Un invité qui change de navigateur ou vide ses données perd sa session, sauf s'il a laissé son e-mail (lien personnel) | `guest-app.tsx`, `join.php` |
 | Un e-mail d'ouverture ou de révélation en échec n'est pas renvoyé | `mail.php` |
 | Sans tâche planifiée ni visite, les e-mails d'ouverture et de révélation ne partent pas à l'heure | `mail.php`, `cron.php` |
-| Pas d'application installable ni de mode hors ligne | Aucun manifeste ni service worker |
+| Pas d'application installable ni de mode hors ligne : pas de service worker, donc pas d'envoi en arrière-plan page fermée | Aucun manifeste ni service worker |
 | Un seul administrateur | `lib.php` |
 | Paiement : non réalisé, « à décider » | README d'origine |
 
@@ -1269,6 +1405,11 @@ Aucune de ces pistes n'est décidée. Elles découlent directement des limites c
 | Le logo | `src/components/logo.tsx`, `src/app/icon.svg` ; en-tête des e-mails dans `mail.php` ; carte de table dans `table-card.ts` |
 | La carte de table (PDF) | `src/lib/table-card.ts` |
 | L'allure du QR code | `src/lib/qr.ts`, `src/components/qr-card.tsx` |
+| Le comportement de l'envoi des photos (essais, délais, conservation, reprise) | `src/lib/upload-queue.ts` (constantes en tête de fichier) |
+| Le stockage des photos en attente sur le téléphone | `src/lib/photo-store.ts` |
+| L'écran maintenu allumé pendant l'envoi | `src/lib/wake-lock.ts`, `AWAKE_MS` dans `src/lib/upload-queue.ts` |
+| Les textes affichés pendant l'envoi (attente, réseau coupé, photos retrouvées) | `sendingStatus()` dans `src/components/guest/guest-app.tsx` ; message des photos non envoyées après la révélation : `guest-app.tsx` et `src/components/guest/my-photos.tsx` |
+| Le contrôle anti-doublon d'une photo | `public/api/upload.php` (`reply_if_received`), `database/015_photo_client_id.sql`, `client_id` dans `src/lib/upload-queue.ts` |
 | La taille ou la qualité des photos envoyées | `src/lib/image.ts` (`MAX_SIDE`, `QUALITY`) ; plafonds du serveur dans `public/api/upload.php` |
 | La taille des vignettes | `public/api/upload.php` (`THUMB_SIDE`) |
 | Le bonus de photos pour un e-mail | `EMAIL_BONUS` dans `public/api/lib.php` ; le texte « +5 » de `src/components/admin/admin-app.tsx` |
@@ -1285,7 +1426,7 @@ Aucune de ces pistes n'est décidée. Elles découlent directement des limites c
 | Les en-têtes de sécurité ou le cache | `public/.htaccess` |
 | Les pages ouvertes aux moteurs de recherche | `public/robots.txt`, `public/sitemap.xml`, et le champ `robots` des pages de `src/app/` |
 | Les mentions légales, la confidentialité, les coordonnées de l'éditeur | `src/app/mentions-legales/page.tsx`, `src/app/confidentialite/page.tsx`, `EDITEUR` dans `src/components/legal-page.tsx` |
-| Le schéma de la base | Nouvelle migration dans `database/`, **et** `database/local.sqlite.sql` |
+| Le schéma de la base | Nouvelle migration dans `database/`, **et** `database/local.sqlite.sql`, **et** le tableau `$added` de `scripts/local.sh` si une colonne est ajoutée |
 | Ajouter un endpoint | Nouveau fichier dans `public/api/`, qui commence par `require __DIR__ . '/lib.php';` ; appel côté front par `api("<nom>", …)` |
 | Ajouter une page | Nouveau dossier dans `src/app/` avec un `page.tsx` ; lire d'abord le guide Next.js signalé par `AGENTS.md` ; penser à `robots.txt` |
 | La mise en ligne | `scripts/deploy.sh`, `deploy.env.example` |

@@ -58,6 +58,12 @@ Un événement est un mariage, un baptême, un anniversaire ou un autre événem
 - Un invité qui laisse son e-mail reçoit 5 photos de plus (seulement si l'album est limité en photos).
 - Si le nombre maximum de photographes est atteint, un nouvel invité voit « Cet album est complet ».
 
+### Envoi des photos
+
+Une photo prise n'est plus perdue si l'invité ferme la page ou perd le réseau. Chaque photo est d'abord gardée sur son téléphone, puis envoyée à l'album une fois que la connexion le permet. Si le réseau tombe, l'écran indique combien de photos attendent et elles partent toutes seules au retour du réseau. Si l'invité ferme la page avant la fin, il retrouve ses photos en rouvrant la page (en scannant de nouveau le QR code ou par son lien personnel) : elles repartent sans qu'il ait rien à refaire. Une photo n'est jamais enregistrée deux fois, même si la connexion a coupé juste après son envoi. Pendant l'envoi, l'écran du téléphone reste allumé.
+
+Une limite reste vraie : page fermée, rien ne part. L'invité doit rouvrir la page pour que ses photos en attente repartent. Deux règles actuelles, pas encore confirmées : les photos encore en attente quand l'album est dévoilé ne sont pas envoyées (elles restent sur le téléphone, avec un message), et une photo qui n'est pas partie est gardée 7 jours sur le téléphone.
+
 ### Un album surprise
 
 Avant la révélation, les organisateurs voient seulement le nombre total de photos et, pour chaque photographe ayant envoyé au moins une photo, son prénom et son nombre de photos. Aucune image n'est accessible. Un invité ne voit que ses propres photos.
@@ -104,13 +110,13 @@ La politique de confidentialité annonce la suppression des albums au plus tard 
 | Étape | État |
 |---|---|
 | Page vitrine (présentation, vidéo, formulaire de demande) | en ligne |
-| Parcours invité (QR code, « Connecté ! », appareil photo, import, envoi, « Mes photos » dans l'ordre de prise de vue) | en ligne |
+| Parcours invité (QR code, « Connecté ! », appareil photo, import, envoi, « Mes photos » dans l'ordre de prise de vue) | en ligne, y compris l'envoi fiable des photos (gardées sur le téléphone, reprise à la réouverture, jamais en double), mis en ligne le 5 octobre 2026 ; à essayer sur de vrais téléphones |
 | Album des organisateurs (compteurs, révélation, ZIP, coups de cœur) | en ligne |
 | Administration (événements, QR code, PDF des tables, photos, coups de cœur visibles) | en ligne |
 | Mot de passe oublié de l'administration | en ligne |
 | E-mails (bienvenue, ouverture, révélation, adaptés au type d'événement) | en ligne |
 | Mentions légales et politique de confidentialité | en ligne |
-| Tests de bout en bout Playwright (3 scénarios : mariage, mot de passe, types d'événement) | en place ; au dernier passage, le 4 octobre 2026, les trois scénarios réussissent |
+| Tests de bout en bout Playwright (4 scénarios : mariage, mot de passe, types d'événement, reprise de l'envoi) | en place ; au dernier passage de chacun (4 et 5 octobre 2026), les quatre scénarios réussissent |
 | Tâche planifiée pour les e-mails sans visite du site | à confirmer (voir le SDD) |
 | Suppression des albums six mois après la clôture | à faire à la main, pas automatisée |
 | Paiement | à décider |

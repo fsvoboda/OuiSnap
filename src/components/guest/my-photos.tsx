@@ -10,11 +10,13 @@ type Photo = { id: number; width: number; height: number; liked: boolean };
 export function MyPhotos({
   token,
   readOnly = false,
+  notice,
   onBack,
   onCount,
 }: {
   token: string;
   readOnly?: boolean; // album dévoilé : plus de retour à l'appareil photo ni de suppression
+  notice?: string; // photos restées sur le téléphone, faute d'avoir pu partir avant la révélation
   onBack?: () => void;
   onCount: (count: number) => void;
 }) {
@@ -83,6 +85,11 @@ export function MyPhotos({
       {readOnly && (
         <p className="mb-5 rounded-2xl bg-sapin-800 px-5 py-4 text-sm leading-relaxed text-brume">
           L&apos;album a été dévoilé. Il n&apos;est plus possible d&apos;ajouter ou de supprimer des photos.
+        </p>
+      )}
+      {readOnly && notice && (
+        <p role="status" className="mb-5 rounded-2xl border border-creme/20 px-5 py-4 text-sm leading-relaxed text-creme">
+          {notice}
         </p>
       )}
 

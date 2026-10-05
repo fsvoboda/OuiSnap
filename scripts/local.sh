@@ -14,6 +14,16 @@ npm run build
 DATA="$DATA" php -r '
   $data = getenv("DATA");
   $pdo = new PDO("sqlite:$data/dev.sqlite");
+  // Base créée avant l ajout d une colonne : CREATE TABLE IF NOT EXISTS ne la modifie pas.
+  // À faire avant le fichier SQL, dont les index portent sur ces colonnes.
+  $added = ["photos" => ["client_id" => "TEXT NULL"]];
+  foreach ($added as $table => $columns) {
+    $present = array_column($pdo->query("PRAGMA table_info($table)")->fetchAll(PDO::FETCH_ASSOC), "name");
+    if ($present === []) continue; // base neuve : le fichier SQL crée tout
+    foreach ($columns as $name => $type) {
+      if (!in_array($name, $present, true)) $pdo->exec("ALTER TABLE $table ADD COLUMN $name $type");
+    }
+  }
   $pdo->exec(file_get_contents("database/local.sqlite.sql"));
   $config = [
     "dsn" => "sqlite:$data/dev.sqlite",

@@ -42,8 +42,12 @@ CREATE TABLE IF NOT EXISTS photos (
   height INTEGER NOT NULL,
   bytes INTEGER NOT NULL,
   liked INTEGER NOT NULL DEFAULT 0,
+  client_id TEXT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Un envoi reçu deux fois (réponse perdue en route) n'est enregistré qu'une fois.
+CREATE UNIQUE INDEX IF NOT EXISTS photos_guest_client ON photos (guest_id, client_id);
 
 INSERT OR IGNORE INTO events (code, title, wedding_date, max_photos_per_guest, album_token_hash)
 VALUES ('DEMO2026', 'Mariage de démonstration', date('now', 'localtime'), 10, '97daac0ee9998dfcad6c9c0970da5ca411c86233a944c25b47566f6a7bc1ddd5');

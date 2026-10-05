@@ -1,6 +1,6 @@
 // Bilan des tests Playwright de OuiSnap : fabrique .playwright-mcp/rapport-pw.html à partir de resultats.json.
 // Chaque script de test enregistre son résultat dans .playwright-mcp/dernier-<test>.json (avec date et heures). Ensuite :
-//   node .claude/skills/pw/scripts/rapport.mjs ajouter <mariage|mot-de-passe|types>   ajoute ce passage à l'historique
+//   node .claude/skills/pw/scripts/rapport.mjs ajouter <mariage|mot-de-passe|types|reprise>   ajoute ce passage à l'historique
 //   node .claude/skills/pw/scripts/rapport.mjs                                        régénère seulement la page
 // La sortie donne le verdict et la liste des captures à publier avec la page.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -85,6 +85,39 @@ const TESTS = [
         [`types-${kind}-5-album-vide.png`, `${label} : album révélé vide`],
       ];
     }),
+  },
+  {
+    id: "reprise",
+    name: "Reprise de l'envoi",
+    script: "e2e-reprise.js",
+    summary:
+      "Les photos d'un invité sont gardées sur son téléphone quand le réseau tombe, repartent à la réouverture de la page, ne sont jamais enregistrées deux fois, et se comportent bien quand la limite est atteinte ou l'album dévoilé avant l'envoi.",
+    limits: [
+      "Un onglet tué ou gelé par le téléphone n'est pas simulé : seule la fermeture ou le rechargement de la page est joué.",
+      "L'écran verrouillé et le maintien réel de l'écran allumé ne sont pas testés.",
+      "Safari sur iPhone et ses défauts de stockage ne sont pas couverts (le test tourne dans Chromium).",
+      "La vraie navigation privée et un quota réellement plein ne sont pas simulés : l'absence de stockage est imitée en retirant IndexedDB de la page.",
+      "Le navigateur intégré d'une autre application (Instagram, Facebook…) n'est pas testé.",
+      "Deux envois vraiment simultanés du même identifiant ne sont pas rejoués : le serveur de test traite une requête à la fois.",
+      "MySQL (production) n'est pas couvert : le test tourne sur SQLite.",
+      "Le délai maximal d'un envoi (75 à 180 secondes) n'est pas rejoué.",
+    ],
+    expected: [
+      { pattern: /401 \(Unauthorized\)/, why: "la page admin vérifie s'il existe une session avant la connexion" },
+      { pattern: /ERR_INTERNET_DISCONNECTED/, why: "réseau coupé volontairement pour que les photos restent en attente" },
+      { pattern: /ERR_FAILED|ERR_CONNECTION_RESET/, why: "envoi coupé volontairement par le test" },
+      { pattern: /409 \(Conflict\)/, why: "limite de photos atteinte, refusée par le serveur" },
+      { pattern: /403 \(Forbidden\)/, why: "album dévoilé avant l'envoi, refusé par le serveur" },
+      { pattern: /400 \(Bad Request\)/, why: "identifiant de photo mal formé, refusé par le serveur" },
+    ],
+    shots: [
+      ["reprise-3-hors-ligne.png", "Réseau coupé : 3 photos gardées"],
+      ["reprise-4-retrouvees.png", "Réouverture : photos retrouvées"],
+      ["reprise-6-doublon.png", "Réponse perdue : photo non dupliquée"],
+      ["reprise-7-sans-stockage.png", "Sans stockage : ne fermez pas la page"],
+      ["reprise-8-limite.png", "Limite atteinte pendant la coupure"],
+      ["reprise-10-album-devoile.png", "Album dévoilé avant l'envoi"],
+    ],
   },
 ];
 

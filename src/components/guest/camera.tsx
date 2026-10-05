@@ -221,7 +221,7 @@ export function Camera({
         )}
 
         {status && (
-          <p className="pointer-events-none absolute bottom-16 left-1/2 hidden max-w-[80%] -translate-x-1/2 rounded-full bg-sapin-950/75 px-4 py-1.5 text-center text-sm landscape:block">
+          <p className="pointer-events-none absolute bottom-16 left-1/2 hidden max-w-[80%] -translate-x-1/2 rounded-full bg-sapin-950/75 px-4 py-1.5 text-center text-sm text-balance landscape:block">
             {status}
           </p>
         )}
@@ -242,7 +242,7 @@ export function Camera({
       </div>
 
       <div className="flex flex-col items-center gap-3 px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 landscape:justify-center landscape:gap-4 landscape:px-4 landscape:py-3 landscape:pr-[max(1rem,env(safe-area-inset-right))]">
-        <p role="status" className="min-h-5 text-center text-sm text-brume landscape:hidden">
+        <p role="status" className="min-h-5 text-center text-sm text-balance text-brume landscape:hidden">
           {status}
         </p>
         <div className="grid w-full max-w-sm grid-cols-3 items-center landscape:w-auto landscape:grid-cols-1 landscape:gap-4 landscape:justify-items-center">

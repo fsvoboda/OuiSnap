@@ -2,10 +2,13 @@
 
 import { Check } from "@phosphor-icons/react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Logo } from "@/components/logo";
 import { api, ApiError, type EventInfo } from "@/lib/api";
 import { kindOf } from "@/lib/kinds";
+import { countStored } from "@/lib/photo-store";
+import { uploadQueue, type QueueSnapshot } from "@/lib/upload-queue";
+import { useWakeLock } from "@/lib/wake-lock";
 import { Camera } from "./camera";
 import { MyPhotos } from "./my-photos";
 
@@ -29,7 +32,44 @@ function saveToken(code: string, token: string) {
   }
 }
 
+function forgetToken(code: string) {
+  try {
+    localStorage.removeItem(storageKey(code));
+  } catch {
+    // Rien à oublier si le stockage n'est pas accessible.
+  }
+}
+
+// Premier contact avec le serveur : délai maximal, puis nouveaux essais automatiques de plus en plus espacés.
+const JOIN_TIMEOUT_MS = 30_000;
+const JOIN_RETRY_SECONDS = [6, 12, 24, 48, 60];
+
 const plural = (count: number) => (count > 1 ? "photos" : "photo");
+const notSent = (count: number) => (count > 1 ? "n'ont pas pu être envoyées" : "n'a pas pu être envoyée");
+
+// Ce que l'invité lit sous l'appareil photo tant que des photos ne sont pas parties.
+function sendingStatus({ waiting, restored, blocked, stalled, durable }: QueueSnapshot) {
+  const left = `${waiting} ${plural(waiting)} en attente`;
+  if (waiting === 0) {
+    if (blocked === 0) return null;
+    const kept = blocked > 1 ? "Elles restent sur ce téléphone" : "Elle reste sur ce téléphone";
+    return durable
+      ? `${blocked} ${plural(blocked)} ${notSent(blocked)}. ${kept}, nouvel essai à la prochaine ouverture.`
+      : `${blocked} ${plural(blocked)} ${notSent(blocked)}.`;
+  }
+  if (stalled === "network") {
+    return durable
+      ? `Réseau indisponible. ${left}, ${waiting > 1 ? "gardées" : "gardée"} sur ce téléphone.`
+      : `Réseau indisponible. ${left} : ne fermez pas cette page.`;
+  }
+  if (stalled === "slow") return `Connexion lente. ${left} : gardez cette page ouverte.`;
+  if (stalled) return `Envoi momentanément impossible. ${left}, nouvel essai automatique.`;
+  if (!durable) return `${left}. Ne fermez pas cette page : ce navigateur ne ${waiting > 1 ? "les" : "la"} garde pas.`;
+  if (restored > 0) {
+    return `${restored} ${plural(restored)} ${restored > 1 ? "retrouvées" : "retrouvée"}, envoi en cours…`;
+  }
+  return `Envoi de ${waiting} ${plural(waiting)}…${waiting >= 3 ? " Gardez cette page ouverte." : ""}`;
+}
 
 export function GuestApp() {
   const [screen, setScreen] = useState<Screen>("loading");
@@ -38,24 +78,45 @@ export function GuestApp() {
   const [event, setEvent] = useState<EventInfo | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [count, setCount] = useState(0);
-  const [pending, setPending] = useState(0);
-  const [stalled, setStalled] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastShot, setLastShot] = useState<string | null>(null);
   const [shots, setShots] = useState(0);
   const [joining, setJoining] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
-
-  // File d'envoi : les photos partent une à une, et attendent si le réseau tombe.
-  const queue = useRef<Blob[]>([]);
-  const sending = useRef(false);
-  const tokenRef = useRef<string | null>(null);
+  // Photos restées sur le téléphone parce que l'album a été dévoilé ou clôturé avant leur envoi.
+  const [lost, setLost] = useState(0);
+  // Photos gardées sur le téléphone, comptées quand la page s'ouvre sans réseau.
+  const [kept, setKept] = useState(0);
   const maxRef = useRef<number | null>(null);
+
+  // File d'envoi : les photos sont gardées sur le téléphone, partent une à une, et attendent si le réseau tombe.
+  const queue = useSyncExternalStore(uploadQueue.subscribe, uploadQueue.getSnapshot, uploadQueue.getServerSnapshot);
+  useWakeLock(queue.awake);
 
   useEffect(() => {
     let cancelled = false;
+    let busy = false;
+    let tries = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let listening = false;
+
+    // Page rouverte sans réseau : la connexion à l'album est retentée toute seule, sans attendre « Réessayer ».
+    const again = () => {
+      if (document.visibilityState === "visible") start();
+    };
+    function stopRetrying() {
+      clearTimeout(retry);
+      if (!listening) return;
+      listening = false;
+      window.removeEventListener("online", start);
+      document.removeEventListener("visibilitychange", again);
+    }
+
     async function start() {
+      if (busy || cancelled) return;
+      busy = true;
+      clearTimeout(retry);
       const query = new URLSearchParams(window.location.search);
       const scanned = (query.get("c") ?? "").toUpperCase();
       try {
@@ -67,14 +128,44 @@ export function GuestApp() {
           window.history.replaceState(null, "", `${window.location.pathname}?c=${scanned}`);
         }
         const stored = /^[a-f0-9]{48}$/.test(linked) ? linked : readToken(scanned);
-        const result = await api<JoinResult>("join", stored ? { code: scanned, token: stored } : { code: scanned });
+        const result = await api<JoinResult>(
+          "join",
+          stored ? { code: scanned, token: stored } : { code: scanned },
+          { timeout: JOIN_TIMEOUT_MS },
+        );
         if (cancelled) return;
+        stopRetrying();
+        setProblem(null);
+        setKept(0);
+        // Sans l'attendre : les photos restées sur le téléphone repartent pendant que l'écran s'affiche.
+        uploadQueue.open(scanned, result.event.state, {
+          onCount: setCount,
+          onNotice: setNotice,
+          onLimit(dropped) {
+            if (maxRef.current !== null) setCount(maxRef.current);
+            setNotice(
+              `Limite de ${maxRef.current} ${plural(maxRef.current ?? 0)} atteinte : ${dropped} ${plural(dropped)} ${dropped > 1 ? "n'ont pas été envoyées" : "n'a pas été envoyée"}.`,
+            );
+          },
+          // L'album vient d'être dévoilé (lecture seule) ou clôturé.
+          onEnd(state, count) {
+            setLost(count);
+            if (state === "closed") setClosed(true);
+            else setEvent((current) => current && { ...current, state });
+          },
+          onSessionLost() {
+            forgetToken(scanned);
+            setToken(null);
+            setScreen("welcome");
+          },
+          onGone: setProblem,
+        });
         setCode(scanned);
         setEvent(result.event);
         setClosed(result.event.state === "closed");
         maxRef.current = result.event.maxPhotos;
         if (result.token) {
-          tokenRef.current = result.token;
+          uploadQueue.setToken(result.token);
           setToken(result.token);
           setCount(result.count);
           setScreen("camera");
@@ -82,70 +173,55 @@ export function GuestApp() {
           setScreen("welcome");
         }
       } catch (reason) {
-        if (!cancelled) setProblem((reason as ApiError).message);
+        if (cancelled) return;
+        const error = reason as ApiError;
+        // QR code qui n'est plus reconnu : les photos gardées pour lui ne partiront jamais.
+        if (scanned && error.code === "event") {
+          uploadQueue.open(scanned, "gone", {
+            onCount: setCount,
+            onNotice: setNotice,
+            onLimit: () => {},
+            onEnd: () => {},
+            onSessionLost: () => {},
+            onGone: setProblem,
+          });
+        }
+        setProblem(error.message);
+        // Erreur passagère : nouvel essai au retour du réseau, au retour sur la page, et à intervalles croissants.
+        if (error.code === "network" || error.retryable) {
+          if (!listening) {
+            listening = true;
+            window.addEventListener("online", start);
+            document.addEventListener("visibilitychange", again);
+          }
+          retry = setTimeout(start, JOIN_RETRY_SECONDS[Math.min(tries, JOIN_RETRY_SECONDS.length - 1)] * 1000);
+          tries += 1;
+          countStored(scanned).then((stored) => {
+            if (!cancelled && listening) setKept(stored);
+          });
+        } else {
+          stopRetrying();
+          setKept(0);
+        }
+      } finally {
+        busy = false;
       }
     }
     start();
     return () => {
       cancelled = true;
+      stopRetrying();
     };
   }, []);
-
-  const send = useCallback(async () => {
-    if (sending.current) return;
-    sending.current = true;
-    while (queue.current.length > 0 && tokenRef.current) {
-      try {
-        const result = await api<{ count: number }>("upload", {
-          token: tokenRef.current,
-          photo: queue.current[0],
-        });
-        queue.current.shift();
-        setCount(result.count);
-        setStalled(false);
-      } catch (reason) {
-        const error = reason as ApiError;
-        if (error.temporary) {
-          setStalled(true);
-          break;
-        }
-        // Refus définitif : la photo est retirée de la file et l'invité prévenu.
-        queue.current.shift();
-        if (error.code === "limit") {
-          queue.current = [];
-          if (maxRef.current !== null) setCount(maxRef.current);
-        }
-        // L'album vient d'être dévoilé : l'appli passe en lecture seule.
-        if (error.code === "closed") {
-          queue.current = [];
-          setClosed(true);
-        }
-        setNotice(error.message);
-      }
-      setPending(queue.current.length);
-    }
-    setPending(queue.current.length);
-    sending.current = false;
-  }, []);
-
-  // Réseau capricieux : nouvel essai régulier, et dès que la connexion revient.
-  useEffect(() => {
-    if (!stalled) return;
-    const timer = setInterval(send, 6000);
-    window.addEventListener("online", send);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("online", send);
-    };
-  }, [stalled, send]);
 
   // Évite de fermer la page tant que des photos ne sont pas parties.
+  const unsent = queue.waiting > 0;
   useEffect(() => {
-    if (pending === 0) return;
+    if (!unsent) return;
     const warn = (unload: BeforeUnloadEvent) => unload.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [pending]);
+  }, [unsent]);
 
   async function join(form: React.FormEvent<HTMLFormElement>) {
     form.preventDefault();
@@ -159,7 +235,7 @@ export function GuestApp() {
       const result = await api<JoinResult>("join", { code, name, email });
       if (!result.token) throw new ApiError("name", "Ce prénom n'est pas valide.", 422);
       saveToken(code, result.token);
-      tokenRef.current = result.token;
+      uploadQueue.setToken(result.token);
       // La limite renvoyée tient compte du bonus accordé pour l'e-mail.
       setEvent(result.event);
       maxRef.current = result.event.maxPhotos;
@@ -174,25 +250,24 @@ export function GuestApp() {
   }
 
   const max = event?.maxPhotos ?? null;
-  const taken = count + pending;
+  // Une photo reçue dont la réponse s'est perdue compte deux fois jusqu'à son accusé : d'où le plafond.
+  const taken = max === null ? count + queue.waiting : Math.min(max, count + queue.waiting);
   const remaining = max === null ? null : Math.max(0, max - taken);
 
   function addShots(photos: Blob[]) {
     const accepted = remaining === null ? photos : photos.slice(0, remaining);
     if (accepted.length < photos.length) {
-      setNotice(`Limite de ${max} photos atteinte : ${accepted.length} sur ${photos.length} ajoutées.`);
+      setNotice(`Limite de ${max} ${plural(max ?? 0)} atteinte : ${accepted.length} sur ${photos.length} ajoutées.`);
     } else {
       setNotice(null);
     }
     if (accepted.length === 0) return;
-    queue.current.push(...accepted);
-    setPending(queue.current.length);
+    uploadQueue.add(accepted);
     setShots((value) => value + 1);
     setLastShot((previous) => {
       if (previous) URL.revokeObjectURL(previous);
       return URL.createObjectURL(accepted[accepted.length - 1]);
     });
-    send();
   }
 
   if (problem) {
@@ -202,6 +277,13 @@ export function GuestApp() {
         <p role="alert" className="max-w-[30ch] font-serif text-2xl italic">
           {problem}
         </p>
+        {kept > 0 && (
+          <p role="status" className="max-w-[34ch] text-sm leading-relaxed text-brume">
+            {kept > 1
+              ? `${kept} photos prises sur ce téléphone sont en attente : elles partiront dès que la connexion reviendra.`
+              : "1 photo prise sur ce téléphone est en attente : elle partira dès que la connexion reviendra."}
+          </p>
+        )}
         <button
           type="button"
           onClick={() => window.location.reload()}
@@ -232,6 +314,11 @@ export function GuestApp() {
         <p className="max-w-[26ch] font-serif text-2xl italic">
           Cet album est clôturé : il n&apos;est plus accessible.
         </p>
+        {lost > 0 && (
+          <p role="status" className="max-w-[34ch] text-sm leading-relaxed text-brume">
+            {lost} {plural(lost)} {notSent(lost)} : l&apos;album est clôturé.
+          </p>
+        )}
       </main>
     );
   }
@@ -265,7 +352,13 @@ export function GuestApp() {
   }
 
   if (closed) {
-    if (token) return <MyPhotos token={token} readOnly onCount={setCount} />;
+    if (token) {
+      const unsentNotice =
+        lost > 0
+          ? `${lost} ${plural(lost)} ${lost > 1 ? "prises" : "prise"} sur ce téléphone ${notSent(lost)} avant que l'album soit dévoilé.`
+          : undefined;
+      return <MyPhotos token={token} readOnly notice={unsentNotice} onCount={setCount} />;
+    }
     return (
       <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-sapin-900 px-8 text-center text-creme">
         <Logo className="text-4xl" />
@@ -348,7 +441,7 @@ export function GuestApp() {
           </p>
           {max !== null && (
             <p className="mt-2 text-center text-sm text-sapin-700">
-              Vous pouvez envoyer jusqu&apos;à {max} photos
+              Vous pouvez envoyer jusqu&apos;à {max} {plural(max)}
               {event.emailBonus > 0 ? `, ou ${max + event.emailBonus} avec votre e-mail` : ""}.
             </p>
           )}
@@ -363,14 +456,7 @@ export function GuestApp() {
 
   const counter = max === null ? `${taken} ${plural(taken)}` : `${taken} / ${max} photos`;
   const status =
-    notice ??
-    (stalled
-      ? `Réseau indisponible. ${pending} ${plural(pending)} en attente, nouvel essai automatique.`
-      : pending > 0
-        ? `Envoi de ${pending} ${plural(pending)}…`
-        : remaining === 0
-          ? `Vous avez envoyé vos ${max} photos. Merci !`
-          : null);
+    notice ?? sendingStatus(queue) ?? (remaining === 0 ? `Vous avez envoyé vos ${max} photos. Merci !` : null);
 
   return (
     <Camera

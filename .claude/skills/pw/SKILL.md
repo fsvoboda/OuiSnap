@@ -16,8 +16,9 @@ Franck est photographe, pas développeur. Lui rendre compte en termes de ce que 
 | `mariage` | `scripts/e2e-mariage.js` | Création d'un mariage par l'admin, album des mariés, invité qui prend 5 photos, suppression d'une photo par l'admin, révélation, coups de cœur |
 | `mot-de-passe` | `scripts/e2e-mot-de-passe.js` | Mot de passe oublié de l'admin : demande du lien, e-mail HTML, nouveau mot de passe, refus, plafond de demandes |
 | `types` | `scripts/e2e-types.js` | Un événement de chaque type (mariage, baptême, anniversaire, autre) : les textes doivent s'adapter au type |
+| `reprise` | `scripts/e2e-reprise.js` | Reprise de l'envoi des photos d'un invité : photos gardées sur le téléphone, reprise à la réouverture, anti-doublon du serveur, limite, album dévoilé |
 
-Sans précision de Franck, jouer les trois. S'il en nomme un, ne jouer que celui-là : le bilan garde le dernier résultat des autres.
+Sans précision de Franck, jouer les quatre. S'il en nomme un, ne jouer que celui-là : le bilan garde le dernier résultat des autres.
 
 ## Déroulé d'un passage
 
@@ -98,7 +99,7 @@ Prendre `scripts/e2e-mariage.js` pour modèle : ses sélecteurs sont éprouvés.
 
 - Un script est une fonction `async (page) => { … }` jouée dans le serveur Playwright : pas de `require`, pas d'accès aux fichiers. Tout passe par `page` et `page.context()`.
 - Le scénario remplit `log` : une ligne `N. Titre` par étape, puis `  ✓ texte` par contrôle réussi (deux espaces, coche). Un constat qui ne doit pas arrêter le test s'écrit `  ✗ texte`. Le bilan s'appuie sur cette forme.
-- La fin du fichier (bloc « Enregistrement du résultat ») est commune aux trois scripts : la recopier telle quelle dans un nouveau test, en changeant seulement son identifiant.
+- La fin du fichier (bloc « Enregistrement du résultat ») est commune aux quatre scripts : la recopier telle quelle dans un nouveau test, en changeant seulement son identifiant.
 - Il n'y a pas de webcam : la caméra est remplacée par un flux vidéo synthétique (`addInitScript` sur `getUserMedia`). Pour dévoiler un album sans attendre le lendemain, l'admin avance la date de révélation.
 - Les captures vont dans `.playwright-mcp/e2e/`. Celles de l'admin se prennent sans `fullPage`.
 - Pour un nouveau test, l'ajouter au tableau `TESTS` de `scripts/rapport.mjs` (nom, résumé, limites, captures avec leur légende), et à la table en tête de ce fichier.

@@ -1,6 +1,6 @@
 # OuiSnap : document de définition des processus (PDD)
 
-Version du 4 octobre 2026. Les valeurs chiffrées sont suivies du fichier du code où elles sont lues, entre parenthèses (chemins relatifs à `public/api/` pour les `.php`, à `src/` pour le reste).
+Version du 5 octobre 2026. Les valeurs chiffrées sont suivies du fichier du code où elles sont lues, entre parenthèses (chemins relatifs à `public/api/` pour les `.php`, à `src/` pour le reste).
 
 ## 1. Introduction
 
@@ -32,6 +32,7 @@ Du formulaire de demande de la vitrine jusqu'à la suppression d'un album, pour 
 | Clôture | Dernier jour d'accès à l'album. Ensuite, plus personne sauf l'administrateur n'y accède. |
 | Coup de cœur | Marque posée par les organisateurs sur une photo après la révélation. |
 | Bonus e-mail | Photos supplémentaires accordées à l'invité qui laisse son adresse. |
+| Photo en attente | Photo prise ou importée qui n'a pas encore été reçue par l'album. Elle est gardée sur le téléphone de l'invité jusqu'à ce que le serveur confirme sa réception. |
 | ZIP | Fichier unique contenant toutes les photos de l'album, un dossier par photographe. |
 
 Vocabulaire des états : l'administration affiche « À venir », « En cours », « Révélé » et « Clôturé » (admin-app.tsx). Dans ce document, « En cours » est appelé « ouvert ». Dans le code, l'état « révélé » s'appelle `closed` : ne pas le confondre avec la clôture (`expired`).
@@ -247,9 +248,11 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 2. Il appuie sur le déclencheur : un éclair blanc confirme la prise.
 3. Il peut aussi importer une ou plusieurs photos de sa galerie (bouton « Importer depuis la galerie »). Les fichiers illisibles (vidéo, format inconnu) sont ignorés.
 4. Le navigateur réduit chaque photo (JPEG, 2 560 pixels au plus sur le grand côté, qualité 0,85) avant l'envoi (image.ts).
-5. Les photos partent une à une, en arrière-plan. Un compteur affiche « N / max photos » (ou « N photos » sans limite), et « Envoi de N photos… » pendant l'envoi.
-6. Le serveur contrôle la photo, l'enregistre et crée une vignette de 480 pixels (upload.php).
-7. À la dernière photo permise : « Vous avez envoyé vos N photos. Merci ! »
+5. Chaque photo est d'abord gardée sur le téléphone, puis part vers l'album, une à une et dans l'ordre de prise, en arrière-plan (upload-queue.ts). Un compteur affiche « N / max photos » (ou « N photos » sans limite) ; il compte aussi les photos en attente. Pendant l'envoi, l'écran indique « Envoi de N photos… », complété par « Gardez cette page ouverte. » à partir de trois photos.
+6. Le serveur contrôle la photo, l'enregistre, crée une vignette de 480 pixels et confirme la réception (upload.php). La photo est alors effacée du téléphone.
+7. À la dernière photo permise, et seulement quand plus aucune photo n'attend : « Vous avez envoyé vos N photos. Merci ! »
+8. Tant que des photos attendent, l'écran du téléphone reste allumé, si le téléphone le permet, pendant 3 minutes après le dernier progrès (ajout, photo reçue, reprise) (wake-lock.ts, upload-queue.ts).
+9. Si l'invité ferme la page ou perd le réseau avant la fin, les photos en attente restent sur son téléphone. Quand il rouvre la page (en scannant de nouveau le QR code ou par son lien personnel), il n'a rien à refaire : l'écran « Connecté ! » n'apparaît pas, l'écran indique « N photos retrouvées, envoi en cours… » et les photos repartent dans l'ordre.
 
 **Règles de gestion**
 
@@ -259,23 +262,43 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 - RG-31 : le serveur revérifie la limite après l'enregistrement : si deux envois simultanés dépassent le plafond, le dernier est annulé (upload.php).
 - RG-32 : l'envoi n'est possible que tant que l'album est ouvert ; à la révélation, l'appli passe en lecture seule (guest-app.tsx, lib.php).
 - RG-33 : les photos sont stockées hors du dossier public du site ; aucune adresse web n'y mène directement (lib.php).
+- RG-86 : photo gardée avant envoi. Chaque photo prise ou importée est enregistrée sur le téléphone avant de partir. Elle n'en est effacée qu'après la confirmation de réception par le serveur, ou après un refus qui ne changera pas (limite atteinte, fichier non valide, album clôturé) (upload-queue.ts, photo-store.ts).
+- RG-87 : anti-doublon. Chaque photo reçoit un identifiant à la prise. Si le serveur connaît déjà cet identifiant pour cet invité, il répond comme au premier envoi, sans rien enregistrer. Ce contrôle passe avant ceux de l'album, du fichier et de la limite : une photo déjà reçue n'est jamais refusée ni comptée deux fois, même si la limite est atteinte ou l'album fermé entre-temps. Une page ouverte avant cette version n'envoie pas d'identifiant : la photo est acceptée comme avant. Un identifiant mal formé est refusé (upload.php).
+- RG-88 : les photos partent une à une, dans l'ordre de prise. Une photo mise de côté (RG-89) puis envoyée plus tard arrive après les suivantes (upload-queue.ts).
+- RG-89 : nombre d'essais. Un échec qui ne dit rien de la photo (délai dépassé, serveur en défaut, réponse qui ne vient pas de l'API, trop de demandes) compte pour un essai. Au 5e essai, la photo est mise de côté : elle reste sur le téléphone et la suivante part. Un réseau coupé ne compte pas pour un essai. Pendant une panne du serveur ou une connexion trop lente, prendre une nouvelle photo ne relance pas d'envoi et ne consomme donc pas d'essai : le prochain essai programmé suffit. Après un envoi réussi, les photos mises de côté repartent dans la même session, après celles qui attendent, avec 5 nouveaux essais. À la prochaine ouverture de la page, elles retentent aussi leur chance (upload-queue.ts : `MAX_ATTEMPTS`).
+- RG-90 : rythme de reprise. Après un échec, l'envoi reprend au bout de 6, 12, 24, 48 puis 60 secondes, et dès que l'un de ces événements se produit : retour du réseau, retour sur la page, nouvelle photo, ouverture de la page. Album pas encore ouvert : nouvel essai toutes les 60 secondes. Un envoi ne dure pas plus de 60 secondes plus 30 secondes par Mo de photo, 3 minutes au plus ; au-delà, il est interrompu et compte pour un essai. Si la page est restée masquée plus de 10 secondes, l'envoi en cours est relancé sans compter d'essai (upload-queue.ts : `RETRY_SECONDS`, `uploadTimeout`).
+- RG-91 : conservation sur le téléphone. Une photo qui n'est pas partie est gardée 7 jours, tous événements confondus, puis effacée à la prochaine ouverture de la page. Valeur actuelle, pas encore confirmée par le propriétaire (upload-queue.ts : `KEEP_MS`).
+- RG-92 : décompte de la limite. Le compteur est le nombre de photos reçues plus celui des photos en attente, borné à la limite ; l'invité ne peut pas prendre plus que la place restante. Si le serveur répond « limite atteinte », les photos en attente sont retirées de la file et le message l'indique (guest-app.tsx, upload-queue.ts).
+- RG-93 : révélation et clôture. Photos encore en attente quand l'album est dévoilé : elles ne sont pas envoyées, elles restent sur le téléphone et un message s'affiche sur « Mes photos ». Elles repartent si la révélation est repoussée et que l'album se rouvre. Comportement actuel, pas encore confirmé par le propriétaire. Album clôturé : les photos en attente sont effacées du téléphone et l'écran « clôturé » indique combien n'ont pas pu être envoyées. Code d'événement qui n'existe plus : elles sont effacées sans message (upload-queue.ts).
+- RG-94 : écran maintenu allumé. Tant que des photos attendent et que l'envoi avance, l'application demande au téléphone de ne pas éteindre l'écran, sans effet si le téléphone refuse ou ne sait pas le faire (wake-lock.ts).
+- RG-95 : stockage indisponible. Si le téléphone ne peut pas garder les photos (navigateur sans stockage, stockage plein, opération sans réponse au bout de 8 secondes), elles restent en mémoire de la page : elles partent tant que la page est ouverte, et l'écran demande de ne pas la fermer. Le navigateur demande aussi confirmation avant de fermer la page tant que des photos attendent (photo-store.ts, upload-queue.ts, guest-app.tsx).
 
 **Réseau instable**
 
-- Une panne passagère (réseau coupé, serveur en panne) ne perd pas la photo : elle reste dans la file d'attente, l'écran affiche « Réseau indisponible. N photo(s) en attente, nouvel essai automatique. » et l'envoi reprend toutes les 6 secondes et dès que la connexion revient (guest-app.tsx).
-- La file d'attente n'existe que dans la page ouverte : la fermer avant la fin de l'envoi perd les photos en attente. Le navigateur demande alors confirmation avant de fermer (guest-app.tsx).
+- Une panne passagère (réseau coupé, serveur en panne, connexion trop lente) ne perd pas la photo : elle reste en attente sur le téléphone et l'écran l'annonce (voir les messages ci-dessous). L'envoi reprend tout seul selon RG-90.
+- Réseau coupé : « Réseau indisponible. N photos en attente, gardées sur ce téléphone. » Si le téléphone ne peut pas garder les photos (RG-95) : « Réseau indisponible. N photos en attente : ne fermez pas cette page. »
+- Connexion trop lente : « Connexion lente. N photos en attente : gardez cette page ouverte. »
+- Serveur en défaut : « Envoi momentanément impossible. N photos en attente, nouvel essai automatique. »
+- Photo mise de côté après 5 essais : « 1 photo n'a pas pu être envoyée. Elle reste sur ce téléphone, nouvel essai à la prochaine ouverture. »
+- Photo illisible à la relecture (image incomplète ou abîmée) : « 1 photo en attente était illisible et n'a pas pu être envoyée. » Elle est retirée.
+- Page fermée : rien ne part. Les photos en attente n'avancent que page ouverte ; elles repartent à la prochaine ouverture (étape 9).
 
 **Exceptions**
 
-| Situation | Message |
+| Situation | Ce qui se passe |
 |---|---|
-| Limite atteinte (serveur) | « Vous avez atteint la limite de N photos fixée pour cet album. » La file est vidée. |
-| Album dévoilé pendant l'envoi | « L'album a été dévoilé : il n'est plus possible d'ajouter ou de supprimer des photos. » |
-| Photo trop lourde | « Cette photo est trop lourde. » |
-| Fichier non valide | « Ce fichier n'est pas une photo valide. » |
-| Session perdue | « Session expirée. Scannez de nouveau le QR code. » |
+| Limite atteinte (serveur) | Les photos en attente sont retirées. « Limite de N photos atteinte : X photos n'ont pas été envoyées. » |
+| Album dévoilé avant l'envoi | Les photos en attente restent sur le téléphone (RG-93). « Mes photos » passe en lecture seule et affiche : « N photos prises sur ce téléphone n'ont pas pu être envoyées avant que l'album soit dévoilé. » |
+| Album clôturé | Les photos en attente sont effacées. L'écran « clôturé » ajoute : « N photos n'ont pas pu être envoyées : l'album est clôturé. » |
+| Album pas encore ouvert | Les photos restent en attente, nouvel essai toutes les 60 secondes. L'application interroge l'état de l'album au lieu de renvoyer la photo entière. |
+| Photo trop lourde | « Cette photo est trop lourde. » La photo est retirée, les suivantes partent. |
+| Fichier non valide | « Ce fichier n'est pas une photo valide. » La photo est retirée, les suivantes partent. |
+| Session perdue | Le serveur ne reconnaît plus l'invité. L'invité revient à l'écran « Connecté ! » ; ses photos en attente sont gardées et partent après sa réinscription. Si le serveur reconnaît toujours l'invité (par exemple photo trop grosse pour le serveur), l'échec compte pour un essai. |
+| Code d'événement inconnu | Message du serveur, photos en attente effacées. |
+| Refus définitif d'une photo | Elle est retirée et le message s'affiche ; les suivantes continuent. |
+| Stockage indisponible | Les photos restent en mémoire de la page : « N photos en attente. Ne fermez pas cette page : ce navigateur ne les garde pas. » (RG-95) |
+| Page rouverte sans réseau | L'écran affiche « Connexion impossible. Vérifiez votre réseau. » et, en dessous, « N photos prises sur ce téléphone sont en attente : elles partiront dès que la connexion reviendra. » (« 1 photo prise… : elle partira… » au singulier). La connexion à l'album est retentée automatiquement : retour du réseau, retour sur la page, puis toutes les 6 à 60 secondes (délai maximal de 30 secondes par essai). Le bouton « Réessayer » recharge la page. Dès que la connexion revient, les photos partent sans autre geste (guest-app.tsx). |
 | Caméra refusée ou absente | « L'appareil photo n'est pas accessible ici. » avec le bouton « Prendre une photo » qui ouvre l'appareil photo du téléphone |
-| Refus définitif d'une photo | Elle est retirée de la file et le message s'affiche ; les suivantes continuent. |
 
 **Résultat.** Les photos sont dans l'album, comptées pour l'invité.
 
@@ -340,7 +363,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 **Étapes**
 
-1. À l'heure de révélation, l'état de l'album devient « révélé » : les envois et les suppressions des invités sont refusés (RG-32, RG-35).
+1. À l'heure de révélation, l'état de l'album devient « révélé » : les envois et les suppressions des invités sont refusés (RG-32, RG-35). Les photos encore en attente sur un téléphone ne sont pas envoyées (RG-93).
 2. À la prochaine visite utile (page invité, page des organisateurs, administration) ou au prochain passage de la tâche planifiée, le système envoie les e-mails de révélation, une seule fois par album (P12) : d'abord aux photographes, puis aux organisateurs.
 3. Les organisateurs ouvrent leur lien : la page affiche l'album (P9).
 
@@ -565,7 +588,16 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 | Photo réduite avant envoi | 2 560 px sur le grand côté, qualité 0,85 | image.ts |
 | Vignette | 480 px sur le grand côté | upload.php |
 | Rafraîchissement des compteurs | 30 secondes | album-app.tsx |
-| Nouvel essai d'envoi hors ligne | 6 secondes | guest-app.tsx |
+| Reprise de l'envoi après un échec | 6, 12, 24, 48 puis 60 secondes ; remis à 6 s par un déclencheur | upload-queue.ts |
+| Reprise, album pas encore ouvert | 60 secondes | upload-queue.ts |
+| Essais avant mise de côté d'une photo | 5 | upload-queue.ts |
+| Délai maximal d'un envoi | 60 s + 30 s par Mo, 180 s au plus | upload-queue.ts |
+| Délai maximal de la connexion de reprise (« join ») | 30 secondes | upload-queue.ts |
+| Photo en attente gardée sur le téléphone | 7 jours | upload-queue.ts |
+| Écran maintenu allumé | 3 minutes après le dernier progrès | upload-queue.ts |
+| Page masquée avant relance de l'envoi en cours | plus de 10 secondes | upload-queue.ts |
+| Ouverture du stockage du téléphone | 3 secondes, puis repli en mémoire | photo-store.ts |
+| Opération de stockage sans réponse | 8 secondes, puis repli en mémoire | photo-store.ts |
 | Révélation par défaut | lendemain du début, 12h00 | event-form.tsx |
 | Clôture par défaut | début + 14 jours | event-form.tsx |
 | ZIP | 4 Go et 65 535 photos au plus ; taille annoncée sous 150 Mo | album-zip.php |
@@ -578,13 +610,14 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 ### 5.4 Contrôle de bout en bout (Playwright)
 
-Trois scénarios Playwright rejouent des parcours réels sur le serveur local et alimentent une page de bilan (skill `pw`, `.claude/skills/pw/SKILL.md`) :
+Quatre scénarios Playwright rejouent des parcours réels sur le serveur local et alimentent une page de bilan (skill `pw`, `.claude/skills/pw/SKILL.md`) :
 
-| Scénario | Ce qu'il couvre | Dernier passage (4 octobre 2026) |
+| Scénario | Ce qu'il couvre | Dernier passage |
 |---|---|---|
-| mariage | création par l'admin, album des organisateurs, 5 photos d'un invité, suppression par l'admin, révélation, coups de cœur | réussi : 11 étapes, 41 contrôles |
-| mot-de-passe | demande de lien, e-mail, nouveau mot de passe, refus, plafond de demandes | réussi : 10 étapes, 28 contrôles |
-| types | un événement de chaque type, textes adaptés | réussi : 28 étapes, 102 contrôles |
+| mariage | création par l'admin, album des organisateurs, 5 photos d'un invité, suppression par l'admin, révélation, coups de cœur | 5 octobre 2026, réussi : 11 étapes, 41 contrôles |
+| mot-de-passe | demande de lien, e-mail, nouveau mot de passe, refus, plafond de demandes | 4 octobre 2026, réussi : 10 étapes, 28 contrôles |
+| types | un événement de chaque type, textes adaptés | 4 octobre 2026, réussi : 28 étapes, 102 contrôles |
+| reprise | photos gardées sur le téléphone quand le réseau tombe, reprise à la réouverture de la page, photo reçue dont la réponse s'est perdue (jamais en double), navigateur sans stockage, limite atteinte, album dévoilé avant l'envoi | 5 octobre 2026, réussi : 10 étapes, 52 contrôles |
 
 Les résultats sont lus dans `.playwright-mcp/resultats.json`, un fichier local qui n'est pas versionné.
 
@@ -600,4 +633,11 @@ Ce qui n'existe pas encore ou qui n'est pas confirmé :
 - **Prévenir un invité** dont la photo est supprimée par l'administrateur : non prévu (RG-52).
 - **Texte de la vitrine** : le texte de la vitrine annonce « le lendemain à midi » pour la révélation, alors que la date se règle événement par événement (P2).
 - **Sauvegardes** : seulement les instantanés de l'hébergeur (RG-58).
-- **Reprise des photos en attente** après fermeture de la page de l'invité : non prévue (P5).
+- **Photos en attente à la révélation** : elles ne sont pas envoyées et restent sur le téléphone avec un message (RG-93). Choix par défaut, pas encore tranché par le propriétaire.
+- **Durée de conservation sur le téléphone** : 7 jours (RG-91). Choix par défaut, pas encore tranché.
+- **Page fermée** : rien ne part. L'invité doit rouvrir la page pour que ses photos en attente repartent (P5).
+- **Effacement par le téléphone** : le téléphone peut effacer le stockage de la page s'il manque de place, et Safari l'efface après 7 jours sans visite. Les photos en attente sont alors perdues.
+- **Navigation privée** : les photos en attente survivent à un rechargement de la page, pas à la fermeture de l'onglet, et l'application ne peut pas le détecter.
+- **Navigateur intégré d'une autre application** (messagerie, réseau social) : son stockage est à part ; des photos en attente d'un autre navigateur n'y sont pas retrouvées. Aucune détection prévue.
+- **Très mauvais réseau** : une photo de 3 Mo ne passe pas sous environ 160 kbit/s ; elle est mise de côté après 5 essais, sans être supprimée.
+- **Photo supprimée dans « Mes photos »** alors que la réponse de son envoi s'était perdue : un renvoi la recrée. Cas très rare.

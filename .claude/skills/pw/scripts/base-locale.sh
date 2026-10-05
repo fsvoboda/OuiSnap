@@ -19,6 +19,11 @@ case "${1:-}" in
       echo "ARRÊT : out/api/config.php n'est pas la configuration de test (pas de SQLite). Relancer « npm run local »."
       exit 1
     fi
+    # Base créée avant l'anti-doublon des envois : « npm run local » la met à niveau.
+    if [[ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name = 'client_id'")" != "1" ]]; then
+      echo "ARRÊT : la base de test n'a pas la colonne photos.client_id. Relancer « npm run local »."
+      exit 1
+    fi
     echo "OK : serveur local sur le port 8000, base de test SQLite, $(sqlite3 "$DB" 'SELECT COUNT(*) FROM events') événements."
     ;;
   mdp)

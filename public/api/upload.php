@@ -8,7 +8,33 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_SIDE = 8000;
 const THUMB_SIDE = 480;
 
+// Photo déjà reçue sous cet identifiant : même réponse qu'au premier envoi, sans rien écrire.
+function reply_if_received(array $guest, ?string $clientId): void
+{
+    if ($clientId === null) {
+        return;
+    }
+    $stmt = db()->prepare('SELECT id FROM photos WHERE guest_id = ? AND client_id = ?');
+    $stmt->execute([$guest['id'], $clientId]);
+    $id = $stmt->fetchColumn();
+    if ($id !== false) {
+        reply(200, ['ok' => true, 'id' => (int) $id, 'count' => photo_count($guest['id']), 'duplicate' => true]);
+    }
+}
+
 $guest = current_guest();
+
+// Identifiant donné à la photo par le téléphone, qui la renvoie tant qu'il n'a pas reçu de réponse.
+// Absent si la page a été chargée avant cette version : l'envoi est accepté comme avant.
+$clientId = (string) ($_POST['client_id'] ?? '');
+if ($clientId === '') {
+    $clientId = null;
+} elseif (!preg_match('/^[a-f0-9]{32}$/', $clientId)) {
+    fail(400, 'client_id', "La photo n'a pas pu être reçue.");
+}
+// Avant tout autre contrôle : la photo est déjà là, même si l'album s'est fermé ou la limite a été atteinte depuis.
+reply_if_received($guest, $clientId);
+
 require_open($guest);
 $max = guest_max_photos($guest, $guest['email'] !== null);
 $limitMessage = sprintf('Vous avez atteint la limite de %d photos fixée pour cet album.', $max ?? 0);
@@ -50,8 +76,18 @@ if (function_exists('imagecreatefromjpeg') && ($source = @imagecreatefromjpeg($p
     }
 }
 
-db()->prepare('INSERT INTO photos (event_id, guest_id, file, width, height, bytes) VALUES (?, ?, ?, ?, ?, ?)')
-    ->execute([$guest['event_id'], $guest['id'], $file, $info[0], $info[1], $upload['size']]);
+try {
+    db()->prepare('INSERT INTO photos (event_id, guest_id, file, width, height, bytes, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$guest['event_id'], $guest['id'], $file, $info[0], $info[1], $upload['size'], $clientId]);
+} catch (PDOException $e) {
+    delete_photo_files($guest['event_id'], $file);
+    // Le même envoi arrivé deux fois en même temps : l'autre a été enregistré entre-temps.
+    if ((string) $e->getCode() === '23000') {
+        reply_if_received($guest, $clientId);
+    }
+    error_log('OuiSnap : enregistrement de la photo impossible : ' . $e->getMessage());
+    fail(500, 'server', "La photo n'a pas pu être enregistrée.");
+}
 $id = (int) db()->lastInsertId();
 
 // Deux envois simultanés peuvent passer le premier contrôle : on revérifie le rang de cette photo.
