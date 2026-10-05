@@ -207,13 +207,14 @@ export function AdminApp() {
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-5xl flex-col gap-8 px-4 pb-16 md:px-8">
       <header className="flex items-center justify-between gap-4 border-b border-creme/15 py-4">
-        <div className="flex items-baseline gap-4">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
           <Logo className="text-3xl" />
           <p className="libelle text-or-clair">Administration</p>
         </div>
-        <button type="button" onClick={logout} className={`${buttonClass} border border-creme/30`}>
+        <button type="button" onClick={logout} aria-label="Déconnexion"
+          className={`${buttonClass} shrink-0 border border-creme/30`}>
           <SignOut size={18} />
-          Déconnexion
+          <span className="hidden sm:inline">Déconnexion</span>
         </button>
       </header>
 

@@ -167,7 +167,7 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
               type="button"
               onClick={close}
               aria-label="Retour à la galerie"
-              className={`${buttonClass} shrink-0 border border-creme/30`}
+              className={`${buttonClass} shrink-0 bg-or text-sapin-950`}
             >
               <ArrowLeft size={18} />
               Galerie
@@ -177,9 +177,9 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
               type="button"
               onClick={close}
               aria-label="Fermer"
-              className="grid size-11 shrink-0 place-items-center rounded-full border border-creme/30 active:scale-95"
+              className="grid size-11 shrink-0 place-items-center rounded-full border border-creme/60 bg-sapin-800 active:scale-95"
             >
-              <X size={20} />
+              <X size={22} weight="bold" />
             </button>
           </div>
           <div className="min-h-0 flex-1 px-3">
