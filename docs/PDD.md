@@ -423,7 +423,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 1. Dans la liste, l'administrateur clique sur « Voir les photos » de l'événement.
 2. L'écran indique « N photos, N photographes » et, si besoin, « (pas encore révélé) ».
 3. Les photos sont rangées par photographe ; les coups de cœur portent un cœur.
-4. Il agrandit une photo ; une mention « Coup de cœur des organisateurs » s'affiche si besoin. Il revient à la galerie par le bouton « Galerie », la croix, ou le bouton retour du téléphone ou du navigateur (album-view.tsx).
+4. Il agrandit une photo ; une mention « Coup de cœur des organisateurs » s'affiche si besoin. Il revient à la galerie par la croix en haut à droite, ou par le bouton retour du téléphone ou du navigateur (album-view.tsx).
 5. Il clique sur « Supprimer » puis sur « Confirmer la suppression ». La photo et sa vignette sont effacées du serveur.
 6. L'écran passe à la photo suivante, ou se ferme s'il n'en reste plus.
 

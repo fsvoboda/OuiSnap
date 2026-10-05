@@ -163,15 +163,6 @@ export function AlbumView({ event, onBack }: { event: AdminEvent; onBack: () => 
           className="fixed inset-0 z-10 flex touch-none flex-col bg-sapin-950"
         >
           <div className="flex items-center gap-3 p-4">
-            <button
-              type="button"
-              onClick={close}
-              aria-label="Retour à la galerie"
-              className={`${buttonClass} shrink-0 bg-or text-sapin-950`}
-            >
-              <ArrowLeft size={18} />
-              Galerie
-            </button>
             <p className="min-w-0 flex-1 truncate font-serif text-2xl italic">{current.name}</p>
             <button
               type="button"
