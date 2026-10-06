@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS photos (
   bytes INTEGER NOT NULL,
   liked INTEGER NOT NULL DEFAULT 0,
   client_id TEXT NULL,
+  late_taken_at TEXT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

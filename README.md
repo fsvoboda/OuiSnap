@@ -152,7 +152,7 @@ Les mentions légales et la politique de confidentialité sont en ligne, liées 
 | Parcours invité (QR code, « Connecté ! », appareil photo, import, envoi, « Mes photos » dans l'ordre de prise de vue) | en ligne, y compris l'envoi fiable des photos (gardées sur le téléphone, reprise à la réouverture, jamais en double), mis en ligne le 5 octobre 2026 ; à essayer sur de vrais téléphones |
 | Album des organisateurs (compteurs, révélation, ZIP, coups de cœur) | en ligne |
 | Administration (événements, QR codes, PDF des tables, photos, coups de cœur visibles) | en ligne |
-| Cartes imprimables : une carte de table par type d'événement, carte des organisateurs, logo au centre du QR code | codées (octobre 2026) ; rendu jamais vérifié sur papier : les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés, mais rien n'a été imprimé. À imprimer et à essayer avec un vrai téléphone avant tout tirage |
+| Cartes imprimables : une carte de table par type d'événement, carte des organisateurs, logo au centre du QR code | en ligne ; imprimées et essayées le 6 octobre 2026 : les QR codes se lisent sur papier |
 | Mot de passe oublié de l'administration | en ligne |
 | E-mails (bienvenue, ouverture, révélation, avertissement de suppression, adaptés au type d'événement) | en ligne ; les e-mails d'ouverture et de révélation qui échouent sont retentés pendant environ une journée, et un message dont la date est repoussée attend son heure sans s'épuiser (octobre 2026). Ces nouveaux essais n'ont jamais été éprouvés par un envoi réel : ils ont été vérifiés sur une base de test, pas sur la messagerie de l'hébergeur |
 | Mentions légales et politique de confidentialité | en ligne |

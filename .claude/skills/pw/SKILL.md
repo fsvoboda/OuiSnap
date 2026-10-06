@@ -16,7 +16,7 @@ Franck est photographe, pas développeur. Lui rendre compte en termes de ce que 
 | `mariage` | `scripts/e2e-mariage.js` | Création d'un mariage par l'admin, album des mariés, invité qui prend 5 photos, suppression d'une photo par l'admin, révélation, coups de cœur |
 | `mot-de-passe` | `scripts/e2e-mot-de-passe.js` | Mot de passe oublié de l'admin : demande du lien, e-mail HTML, nouveau mot de passe, refus, plafond de demandes |
 | `types` | `scripts/e2e-types.js` | Un événement de chaque type (mariage, baptême, anniversaire, autre) : les textes doivent s'adapter au type |
-| `reprise` | `scripts/e2e-reprise.js` | Reprise de l'envoi des photos d'un invité : photos gardées sur le téléphone, reprise à la réouverture, anti-doublon du serveur, limite, album dévoilé |
+| `reprise` | `scripts/e2e-reprise.js` | Reprise de l'envoi des photos d'un invité : photos gardées sur le téléphone, reprise à la réouverture, anti-doublon du serveur, limite, album dévoilé (les photos prises avant la révélation partent encore) |
 
 Sans précision de Franck, jouer les quatre. S'il en nomme un, ne jouer que celui-là : le bilan garde le dernier résultat des autres.
 

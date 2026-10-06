@@ -12,7 +12,7 @@ export type QueuedPhoto = {
   bytes: number; // poids de l'image, recontrôlé à la relecture
   attempts: number; // essais qui ont échoué avec une réponse ou un délai dépassé
   state: "waiting" | "failed";
-  reason?: string; // code d'erreur d'une fiche « failed »
+  reason?: string; // code d'erreur d'une fiche « failed » ; « late » = refusée parce qu'elle n'est pas attestée prise avant la révélation (jamais retentée)
 };
 
 export type PhotoStore = {

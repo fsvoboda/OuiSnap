@@ -53,6 +53,11 @@ if ($revealed) {
         ],
         $stmt->fetchAll()
     );
+
+    // Photos prises avant la révélation et arrivées après : la page le dit aux organisateurs (RG-130).
+    $stmt = db()->prepare('SELECT COUNT(*) FROM photos WHERE event_id = ? AND late_taken_at IS NOT NULL');
+    $stmt->execute([$event['id']]);
+    $body['late'] = (int) $stmt->fetchColumn();
 }
 
 reply(200, $body);

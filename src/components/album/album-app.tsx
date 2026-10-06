@@ -18,6 +18,7 @@ type Album = {
   closesAt?: string | null; // dernier jour d'accès à l'album
   deletesAt?: string | null; // suppression automatique, seulement si elle est à moins de trente jours
   total: number;
+  late?: number; // photos prises avant la révélation et arrivées après : absent avant la révélation
   guests: { name: string; count: number }[];
   photos?: Photo[];
 };
@@ -253,6 +254,13 @@ export function AlbumApp() {
         <p className="text-brume">
           {plural(album.total, "photo")}, {plural(album.guests.length, "invité")}
         </p>
+        {(album.late ?? 0) > 0 && (
+          <p role="note" className="max-w-[44ch] text-sm leading-relaxed text-or-clair">
+            {album.late === 1
+              ? "1 photo prise pendant l'événement est arrivée après la révélation. Si vous avez déjà téléchargé l'album, téléchargez-le de nouveau pour l'avoir."
+              : `${album.late} photos prises pendant l'événement sont arrivées après la révélation. Si vous avez déjà téléchargé l'album, téléchargez-le de nouveau pour les avoir.`}
+          </p>
+        )}
         {album.deletesAt && (
           <p role="note" className="max-w-[44ch] text-sm leading-relaxed text-or-clair">
             {album.closesAt && longDay(album.closesAt) !== longDay(album.deletesAt)

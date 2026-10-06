@@ -71,6 +71,30 @@ function sendingStatus({ waiting, restored, blocked, stalled, durable }: QueueSn
   return `Envoi de ${waiting} ${plural(waiting)}…${waiting >= 3 ? " Gardez cette page ouverte." : ""}`;
 }
 
+// Ce que l'invité lit sur « Mes photos » après la révélation, pendant que ses photos prises avant partent encore.
+function revealedStatus({ waiting, blocked, refused, sent, stalled, durable }: QueueSnapshot) {
+  if (waiting > 0) {
+    const many = waiting > 1;
+    const left = `${waiting} ${plural(waiting)} ${many ? "prises" : "prise"} avant la révélation`;
+    if (stalled === "network")
+      return `${left} ${many ? "sont encore" : "est encore"} en attente. ${many ? "Elles partiront" : "Elle partira"} dès que la connexion reviendra.`;
+    if (stalled === "slow") return `Connexion lente. ${left} ${many ? "attendent" : "attend"} encore : gardez cette page ouverte.`;
+    if (stalled) return `Envoi momentanément impossible. ${left} ${many ? "attendent" : "attend"} encore, nouvel essai automatique.`;
+    if (!durable)
+      return `${left} ${many ? "partent" : "part"} vers l'album. Ne fermez pas cette page : ce navigateur ne ${many ? "les" : "la"} garde pas.`;
+    return `${left} ${many ? "partent" : "part"} vers l'album. Gardez cette page ouverte.`;
+  }
+  if (blocked > 0) {
+    const kept = blocked > 1 ? "Elles restent sur ce téléphone" : "Elle reste sur ce téléphone";
+    return `${blocked} ${plural(blocked)} ${notSent(blocked)}. ${kept}, nouvel essai à la prochaine ouverture.`;
+  }
+  if (refused > 0)
+    return `${refused} ${plural(refused)} ${refused > 1 ? "n'ont pas pu rejoindre" : "n'a pas pu rejoindre"} l'album : ${refused > 1 ? "elles n'ont pas été prises" : "elle n'a pas été prise"} avant la révélation.`;
+  if (sent > 0)
+    return `${sent} ${plural(sent)} ${sent > 1 ? "prises" : "prise"} avant la révélation ${sent > 1 ? "ont rejoint" : "a rejoint"} l'album.`;
+  return null;
+}
+
 export function GuestApp() {
   const [screen, setScreen] = useState<Screen>("loading");
   const [problem, setProblem] = useState<string | null>(null);
@@ -84,7 +108,7 @@ export function GuestApp() {
   const [joining, setJoining] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
-  // Photos restées sur le téléphone parce que l'album a été dévoilé ou clôturé avant leur envoi.
+  // Photos restées sur le téléphone parce que l'album a été clôturé avant leur envoi.
   const [lost, setLost] = useState(0);
   // Photos gardées sur le téléphone, comptées quand la page s'ouvre sans réseau.
   const [kept, setKept] = useState(0);
@@ -147,11 +171,13 @@ export function GuestApp() {
               `Limite de ${maxRef.current} ${plural(maxRef.current ?? 0)} atteinte : ${dropped} ${plural(dropped)} ${dropped > 1 ? "n'ont pas été envoyées" : "n'a pas été envoyée"}.`,
             );
           },
-          // L'album vient d'être dévoilé (lecture seule) ou clôturé.
-          onEnd(state, count) {
+          // L'album vient d'être dévoilé : lecture seule, mais les photos déjà prises partent encore.
+          onRevealed() {
+            setClosed(true);
+          },
+          onExpired(count) {
             setLost(count);
-            if (state === "closed") setClosed(true);
-            else setEvent((current) => current && { ...current, state });
+            setEvent((current) => current && { ...current, state: "expired" });
           },
           onSessionLost() {
             forgetToken(scanned);
@@ -181,7 +207,8 @@ export function GuestApp() {
             onCount: setCount,
             onNotice: setNotice,
             onLimit: () => {},
-            onEnd: () => {},
+            onRevealed: () => {},
+            onExpired: () => {},
             onSessionLost: () => {},
             onGone: setProblem,
           });
@@ -353,18 +380,22 @@ export function GuestApp() {
 
   if (closed) {
     if (token) {
-      const unsentNotice =
-        lost > 0
-          ? `${lost} ${plural(lost)} ${lost > 1 ? "prises" : "prise"} sur ce téléphone ${notSent(lost)} avant que l'album soit dévoilé.`
-          : undefined;
-      return <MyPhotos token={token} readOnly notice={unsentNotice} onCount={setCount} />;
+      return (
+        <MyPhotos
+          token={token}
+          readOnly
+          notice={notice ?? revealedStatus(queue)}
+          reload={queue.sent}
+          onCount={setCount}
+        />
+      );
     }
     return (
       <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-sapin-900 px-8 text-center text-creme">
         <Logo className="text-4xl" />
         <p className="libelle text-or-clair">{event.title}</p>
         <p className="max-w-[28ch] font-serif text-2xl italic">
-          L&apos;album a été dévoilé. Il n&apos;accepte plus de nouvelles photos.
+          L&apos;album a été dévoilé. Il n&apos;est plus possible de le rejoindre pour photographier.
         </p>
       </main>
     );

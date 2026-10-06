@@ -383,6 +383,57 @@ function require_revealed(array $event): void
     }
 }
 
+// Tolérance d'horloge des téléphones, appliquée aux trois bornes de la date de prise : une photo datée au plus
+// quinze minutes après la révélation (ou avant le début) est encore acceptée. Sans elle, un téléphone en avance
+// ferait perdre une photo prise juste avant la révélation.
+const TAKEN_SKEW_SECONDS = 900;
+
+// Date de prise déclarée par le téléphone (champ POST « taken_at », millisecondes depuis 1970).
+// null : champ absent (page chargée avant cette version), mal formé, ou dans le futur.
+// Ce n'est PAS une preuve : c'est une déclaration du téléphone, que le serveur se contente de borner.
+function posted_taken_at(): ?DateTimeImmutable
+{
+    $value = (string) ($_POST['taken_at'] ?? '');
+    if (preg_match('/^[0-9]{1,14}$/', $value) !== 1) {
+        return null;
+    }
+    $taken = new DateTimeImmutable('@' . intdiv((int) $value, 1000));
+    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    return $taken > $now->modify('+' . TAKEN_SKEW_SECONDS . ' seconds') ? null : $taken;
+}
+
+// Vrai si la date déclarée tient dans la fenêtre de l'événement : après son début, avant sa révélation.
+// Sans date de début (anciens événements), seule la borne de la révélation s'applique.
+function taken_before_reveal(array $event, ?DateTimeImmutable $taken): bool
+{
+    $reveal = reveal_at($event);
+    if ($taken === null || $reveal === null) {
+        return false;
+    }
+    if ($taken > $reveal->modify('+' . TAKEN_SKEW_SECONDS . ' seconds')) {
+        return false;
+    }
+    $starts = utc($event['starts_at'] ?? null);
+    return $starts === null || $taken >= $starts->modify('-' . TAKEN_SKEW_SECONDS . ' seconds');
+}
+
+// Envoi d'une photo. L'album dévoilé n'accepte plus que les photos prises avant sa révélation (RG-129).
+// Rend l'état de l'album (« open » ou « closed »), pour que l'appelant sache s'il reçoit une photo tardive.
+function require_upload_allowed(array $event, ?DateTimeImmutable $taken): string
+{
+    $state = event_state($event);
+    if ($state === 'expired') {
+        fail(410, 'expired', EXPIRED_MESSAGE);
+    }
+    if ($state === 'upcoming') {
+        fail(403, 'upcoming', "L'album n'est pas encore ouvert.");
+    }
+    if ($state === 'closed' && !taken_before_reveal($event, $taken)) {
+        fail(403, 'closed', CLOSED_MESSAGE);
+    }
+    return $state;
+}
+
 // Nom de fichier sans accents ni caractères spéciaux.
 function slug(string $text, string $fallback): string
 {

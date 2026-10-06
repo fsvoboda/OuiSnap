@@ -2,7 +2,9 @@
 // Prérequis : `npm run local` (site + API PHP sur SQLite, port 8000, mot de passe admin : admin).
 // Parcours : reprise de l'envoi des photos d'un invité. Photos gardées sur le téléphone (IndexedDB) quand le réseau tombe,
 // reprise à la réouverture de la page, anti-doublon du serveur (client_id), stockage indisponible, limite atteinte,
-// album dévoilé avant l'envoi. Dix étapes, voir research_notes/PWA et envoi fiable OuiSnap/plan_implementation.md, section 9.
+// album dévoilé avant l'envoi (les photos prises avant la révélation partent encore, les autres sont refusées).
+// Onze étapes, voir research_notes/PWA et envoi fiable OuiSnap/plan_implementation.md, section 9,
+// et research_notes/Retardataires/plan.md, section 5.
 async (page) => {
   const scenario = async (page) => {
   const BASE = 'http://localhost:8000';
@@ -303,7 +305,7 @@ async (page) => {
     expect(bad9.status === 400 && bad9.body.error === 'client_id', `identifiant mal formé refusé : 400 « ${bad9.body.error} »`);
     expect((await serverPhotos()).length === 8, 'toujours 8 photos au serveur');
 
-    step("10. Album dévoilé avant l'envoi : photos gardées, lecture seule");
+    step("10. Album dévoilé avant l'envoi : les photos prises avant la révélation partent quand même");
     const toDelete = ids8.slice(0, 2);
     for (const id of toDelete) {
       const d = await direct('admin-photo-delete', { id: String(id) });
@@ -332,22 +334,85 @@ async (page) => {
     const before10 = r4.resps.length;
     r4.mode = 'pass';
     await online(guest4);
-    await until(() => r4.resps.length > before10, "l'envoi est refusé par le serveur");
-    const c10 = r4.resps[r4.resps.length - 1];
-    expect(c10.status === 403 && c10.body.error === 'closed', `le serveur refuse : 403 « ${c10.body.error} »`);
-    await guest4.getByText(/2 photos prises sur ce téléphone n'ont pas pu être envoyées avant que l'album soit dévoilé\./).waitFor({ timeout: 10000 });
-    expect(true, "message sur « Mes photos » : « 2 photos prises sur ce téléphone n'ont pas pu être envoyées avant que l'album soit dévoilé. »");
-    expect((await guest4.locator('button[aria-label="Prendre la photo"]').count()) === 0, "l'appareil photo n'est plus proposé (lecture seule)");
-    const k10 = await idb(guest4);
-    expect(k10.queue.length === 2 && k10.queue.every((f) => f.state === 'failed' && f.reason === 'closed'), 'les 2 fiches sont gardées, marquées « failed / closed »');
-    expect((await serverPhotos()).length === 6, 'le serveur a toujours 6 photos');
+    await until(() => r4.resps.length >= before10 + 2, 'les 2 photos en attente partent vers le serveur', 25000);
+    const c10 = r4.resps.slice(before10, before10 + 2);
+    expect(
+      c10.every((r) => r.status === 200 && !r.body.duplicate && r.body.state === 'closed'),
+      `les 2 photos prises avant la révélation sont acceptées : ${c10.map((r) => `${r.status}/${r.body.state}`).join(', ')} (état « closed » : la page passe en lecture seule)`,
+    );
+    await until(async () => (await idbCount(guest4)) === 0, 'IndexedDB vide : les 2 photos ont quitté le téléphone');
+    expect((await idb(guest4)).bytes === 0, 'IndexedDB vide : fiches et images effacées après les accusés');
+    expect((await serverPhotos()).length === 8, 'le serveur a reçu les 2 photos tardives : 8 photos');
+    await until(async () => (await guest4.locator('button[aria-label="Prendre la photo"]').count()) === 0, "l'appareil photo disparaît");
+    expect(true, "l'appareil photo n'est plus proposé (lecture seule)");
+    await guest4.getByText("L'album a été dévoilé").waitFor({ timeout: 10000 });
+    expect(true, "bandeau « L'album a été dévoilé. Vous ne pouvez plus prendre de nouvelles photos ni en supprimer. »");
+    await waitStatus(guest4, /2 photos prises avant la révélation ont rejoint l'album\./);
+    expect(true, "message sur « Mes photos » : « 2 photos prises avant la révélation ont rejoint l'album. »");
+    await until(async () => (await guest4.locator('ul > li').count()) === 8, 'la grille « Mes photos » compte 8 vignettes');
+    expect(true, 'la grille « Mes photos » est relue à chaque accusé : 8 vignettes');
     await guest4.screenshot({ path: `${SHOTS}/reprise-10-album-devoile.png` });
     const sentBefore = r4.cids.length;
     await guest4.reload();
-    await guest4.getByText(/2 photos prises sur ce téléphone n'ont pas pu être envoyées avant que l'album soit dévoilé\./).waitFor({ timeout: 10000 });
+    await guest4.getByText("L'album a été dévoilé").waitFor({ timeout: 10000 });
     await guest4.waitForTimeout(2500);
-    expect(r4.cids.length === sentBefore, 'après rechargement : aucun nouvel envoi, le message des 2 photos est affiché de nouveau');
-    expect((await idbCount(guest4)) === 2, 'les 2 fiches sont toujours gardées (jusqu\'à 7 jours)');
+    expect(r4.cids.length === sentBefore, 'après rechargement : aucun nouvel envoi, le bandeau de lecture seule revient');
+    expect((await idbCount(guest4)) === 0, 'IndexedDB toujours vide : rien ne reste sur le téléphone');
+
+    step("11. Album dévoilé : une fiche bloquée par l'ancienne version repart, une photo non prise avant la révélation est refusée");
+    const ids11 = await serverPhotos();
+    for (const id of ids11.slice(0, 2)) {
+      const d = await direct('admin-photo-delete', { id: String(id) });
+      expect(d.status === 200, `photo ${id} supprimée par l'API admin (deux places libérées sur le quota)`);
+    }
+    expect((await serverPhotos()).length === 6, 'le serveur a 6 photos');
+    // Fiche telle que l'ancienne version la laissait : « failed / closed », avec sa vraie date de prise.
+    const old11 = await guest4.evaluate(async ({ code, token }) => {
+      const cv = document.createElement('canvas'); cv.width = 240; cv.height = 160;
+      const g = cv.getContext('2d'); g.fillStyle = '#2b6cb0'; g.fillRect(0, 0, 240, 160);
+      const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.8));
+      const buffer = await blob.arrayBuffer();
+      const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+      const db = await new Promise((res, rej) => { const r = indexedDB.open('ouisnap'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const fiche = { id, code, token, createdAt: Date.now() - 7200000, bytes: buffer.byteLength, attempts: 0, state: 'failed', reason: 'closed' };
+      const seq = await new Promise((res, rej) => {
+        const tx = db.transaction(['queue', 'bytes'], 'readwrite');
+        const add = tx.objectStore('queue').add(fiche);
+        add.onsuccess = () => tx.objectStore('bytes').put(buffer, add.result);
+        tx.oncomplete = () => res(add.result);
+        tx.onabort = () => rej(tx.error);
+      });
+      db.close();
+      return { id, seq, bytes: buffer.byteLength };
+    }, { code: CODE, token: TOKEN });
+    expect(/^[a-f0-9]{32}$/.test(old11.id) && old11.bytes > 200, `fiche d'ancienne version injectée dans IndexedDB (seq ${old11.seq}, ${old11.bytes} octets, « failed / closed », prise il y a 2 h)`);
+    const before11 = r4.resps.length;
+    await guest4.reload();
+    await until(() => r4.resps.length > before11, "la fiche bloquée par l'ancienne version repart", 20000);
+    const o11 = r4.resps[r4.resps.length - 1];
+    expect(o11.status === 200 && o11.cid === old11.id && o11.body.state === 'closed', `elle est acceptée : 200, même identifiant, état « ${o11.body.state} » (compatibilité des pages antérieures)`);
+    await until(async () => (await idbCount(guest4)) === 0, 'IndexedDB vide : la fiche réhabilitée a quitté le téléphone');
+    expect((await serverPhotos()).length === 7, 'le serveur a 7 photos');
+    // Identifiants de photo neufs, tirés dans la page admin (c'est elle qui fait les envois directs).
+    const cid11 = () => admin.evaluate(() => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join(''));
+    const bon11 = await direct('upload', { token: TOKEN, client_id: await cid11(), taken_at: String(Date.now() - 7200000), photo: '__jpeg__' });
+    expect(bon11.status === 200 && bon11.body.state === 'closed', `envoi direct d'une photo prise il y a 2 h : 200, état « ${bon11.body.state} »`);
+    expect((await serverPhotos()).length === 8, 'le serveur a 8 photos');
+    const futur11 = await direct('upload', { token: TOKEN, client_id: await cid11(), taken_at: String(Date.now() + 3600000), photo: '__jpeg__' });
+    expect(futur11.status === 403 && futur11.body.error === 'closed', `date de prise dans le futur refusée : 403 « ${futur11.body.error} »`);
+    const sansDate11 = await direct('upload', { token: TOKEN, client_id: await cid11(), photo: '__jpeg__' });
+    expect(sansDate11.status === 403 && sansDate11.body.error === 'closed', `ancienne page sans date de prise refusée, exactement comme avant : 403 « ${sansDate11.body.error} »`);
+    const limite11 = await direct('upload', { token: TOKEN, client_id: await cid11(), taken_at: String(Date.now() - 7200000), photo: '__jpeg__' });
+    expect(limite11.status === 409 && limite11.body.error === 'limit', `le quota s'applique aussi aux photos tardives : 409 « ${limite11.body.error} » (l'état passe bien avant la limite)`);
+    expect((await serverPhotos()).length === 8, 'aucun des trois refus n\'a ajouté de photo : toujours 8');
+    const cids11 = r4.cids.length;
+    await guest4.reload();
+    await guest4.getByText("L'album a été dévoilé").waitFor({ timeout: 10000 });
+    await until(async () => (await guest4.locator('ul > li').count()) === 8, 'la grille montre les 8 photos, les tardives comprises');
+    expect(true, 'la grille de l\'invité montre les 8 photos, les tardives comprises');
+    await guest4.waitForTimeout(1500);
+    expect(r4.cids.length === cids11, 'aucun nouvel envoi au rechargement : rien ne tourne en boucle');
+    await guest4.screenshot({ path: `${SHOTS}/reprise-11-photo-tardive.png` });
 
     expect(dialogs.length > 0, `boîte « beforeunload » ouverte puis acceptée quand des photos étaient en attente (${dialogs.join(' ; ')})`);
     return { ok: true, title, guestUrl, log, errors, dialogs };

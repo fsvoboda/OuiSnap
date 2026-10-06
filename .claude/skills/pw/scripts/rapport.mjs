@@ -91,7 +91,7 @@ const TESTS = [
     name: "Reprise de l'envoi",
     script: "e2e-reprise.js",
     summary:
-      "Les photos d'un invité sont gardées sur son téléphone quand le réseau tombe, repartent à la réouverture de la page, ne sont jamais enregistrées deux fois, et se comportent bien quand la limite est atteinte ou l'album dévoilé avant l'envoi.",
+      "Les photos d'un invité sont gardées sur son téléphone quand le réseau tombe, repartent à la réouverture de la page, ne sont jamais enregistrées deux fois, et se comportent bien quand la limite est atteinte ou l'album dévoilé avant l'envoi : les photos prises avant la révélation rejoignent encore l'album, celles qui ne le sont pas sont refusées.",
     limits: [
       "Un onglet tué ou gelé par le téléphone n'est pas simulé : seule la fermeture ou le rechargement de la page est joué.",
       "L'écran verrouillé et le maintien réel de l'écran allumé ne sont pas testés.",
@@ -101,13 +101,16 @@ const TESTS = [
       "Deux envois vraiment simultanés du même identifiant ne sont pas rejoués : le serveur de test traite une requête à la fois.",
       "MySQL (production) n'est pas couvert : le test tourne sur SQLite.",
       "Le délai maximal d'un envoi (75 à 180 secondes) n'est pas rejoué.",
+      "Une horloge de téléphone mal réglée de plus de quinze minutes n'est pas simulée : Playwright ne décale pas l'horloge du navigateur de test, seul l'envoi direct avec une fausse date de prise l'imite.",
+      "Les sept jours au bout desquels une photo jamais partie est effacée du téléphone ne sont pas joués : il faudrait avancer le temps. La fenêtre réelle entre la prise de vue et cet effacement n'est donc pas vérifiée.",
+      "Le cas « page ouverte à l'instant exact de la révélation » est approché par l'étape 10 (révélation avancée pendant que des photos attendent), pas rejoué à l'identique.",
     ],
     expected: [
       { pattern: /401 \(Unauthorized\)/, why: "la page admin vérifie s'il existe une session avant la connexion" },
       { pattern: /ERR_INTERNET_DISCONNECTED/, why: "réseau coupé volontairement pour que les photos restent en attente" },
       { pattern: /ERR_FAILED|ERR_CONNECTION_RESET/, why: "envoi coupé volontairement par le test" },
       { pattern: /409 \(Conflict\)/, why: "limite de photos atteinte, refusée par le serveur" },
-      { pattern: /403 \(Forbidden\)/, why: "album dévoilé avant l'envoi, refusé par le serveur" },
+      { pattern: /403 \(Forbidden\)/, why: "photo non prise avant la révélation, ou ancienne page sans date : refusée par le serveur" },
       { pattern: /400 \(Bad Request\)/, why: "identifiant de photo mal formé, refusé par le serveur" },
     ],
     shots: [
@@ -116,7 +119,8 @@ const TESTS = [
       ["reprise-6-doublon.png", "Réponse perdue : photo non dupliquée"],
       ["reprise-7-sans-stockage.png", "Sans stockage : ne fermez pas la page"],
       ["reprise-8-limite.png", "Limite atteinte pendant la coupure"],
-      ["reprise-10-album-devoile.png", "Album dévoilé avant l'envoi"],
+      ["reprise-10-album-devoile.png", "Album dévoilé : les photos en attente partent quand même"],
+      ["reprise-11-photo-tardive.png", "Photo tardive refusée, fiche ancienne repartie"],
     ],
   },
 ];

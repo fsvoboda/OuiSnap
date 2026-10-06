@@ -1,6 +1,7 @@
 // File d'envoi des photos d'un invité. Chaque photo est d'abord gardée sur le téléphone (photo-store),
 // puis envoyée, une à la fois et dans l'ordre. Elle n'est effacée du téléphone qu'après l'accusé du serveur,
 // ou sur un refus qui ne changera pas (limite atteinte, fichier invalide, album clôturé).
+// Album dévoilé : une photo prise avant la révélation part encore ; sinon elle est gardée sans être renvoyée.
 // Tout vit ici, hors de React : l'envoi continue quel que soit l'écran affiché, et reprend à la réouverture.
 // Rien ne touche au navigateur à l'import : la page est prérendue en statique.
 import { api, ApiError, type EventInfo } from "./api";
@@ -12,7 +13,9 @@ type Stalled = null | "network" | "slow" | "server" | "upcoming";
 export type QueueSnapshot = {
   waiting: number; // photos à envoyer, celles en cours d'écriture comprises
   restored: number; // parmi elles, celles retrouvées à l'ouverture de la page
-  blocked: number; // photos mises de côté : elles repartiront après un envoi réussi ou à la prochaine ouverture
+  blocked: number; // photos mises de côté après 5 essais : elles repartiront
+  refused: number; // photos refusées faute d'être attestées prises avant la révélation : gardées, jamais renvoyées
+  sent: number; // photos acquittées par le serveur depuis l'ouverture de la page
   stalled: Stalled;
   durable: boolean; // faux si des photos en attente ne tiennent qu'à la page ouverte
   awake: boolean; // l'envoi avance : l'écran doit rester allumé
@@ -22,7 +25,8 @@ export type QueueEvents = {
   onCount: (count: number) => void; // nombre de photos de l'invité, donné par le serveur
   onNotice: (message: string) => void;
   onLimit: (dropped: number) => void; // limite atteinte : photos retirées de la file
-  onEnd: (state: "closed" | "expired", lost: number) => void; // album dévoilé ou clôturé, photos non envoyées
+  onRevealed: () => void; // le serveur annonce un album dévoilé : plus de nouvelles photos
+  onExpired: (lost: number) => void; // album clôturé : les photos en attente sont perdues
   onSessionLost: () => void; // l'invité n'est plus reconnu : il doit redonner son prénom
   onGone: (message: string) => void; // l'événement n'existe plus
 };
@@ -32,7 +36,16 @@ type OpenState = EventInfo["state"] | "gone";
 // next : passer à la suite ; pause : nouvel essai plus tard ; stop : plus rien ne partira sans action de l'invité.
 type Outcome = "next" | "pause" | "stop";
 
-const EMPTY: QueueSnapshot = { waiting: 0, restored: 0, blocked: 0, stalled: null, durable: true, awake: false };
+const EMPTY: QueueSnapshot = {
+  waiting: 0,
+  restored: 0,
+  blocked: 0,
+  refused: 0,
+  sent: 0,
+  stalled: null,
+  durable: true,
+  awake: false,
+};
 const UNREADABLE = "1 photo en attente était illisible et n'a pas pu être envoyée.";
 
 const KEEP_MS = 7 * 24 * 3600 * 1000; // au-delà, une photo jamais partie est effacée du téléphone
@@ -68,6 +81,7 @@ function createUploadQueue() {
 
   let photos: QueuedPhoto[] = []; // fiches de l'événement, dans l'ordre d'envoi
   let unsaved = 0; // photos ajoutées dont l'écriture n'est pas terminée
+  let sent = 0; // photos acquittées par le serveur depuis l'ouverture de la page
   const found = new Set<number>(); // fiches retrouvées à l'ouverture
   const dead = new Set<string>(); // jetons que le serveur ne reconnaît plus
   let writes = Promise.resolve();
@@ -91,10 +105,13 @@ function createUploadQueue() {
   function emit() {
     const pending = waiting();
     const count = pending.length + unsaved;
+    const refused = photos.filter((photo) => photo.state === "failed" && photo.reason === "late").length;
     const next: QueueSnapshot = {
       waiting: count,
       restored: pending.filter((photo) => found.has(photo.seq)).length,
-      blocked: photos.length - pending.length,
+      blocked: photos.length - pending.length - refused,
+      refused,
+      sent,
       stalled: count > 0 ? stalled : null,
       durable: store?.durable ?? true,
       awake: count > 0 && Date.now() - progressAt < AWAKE_MS,
@@ -210,19 +227,28 @@ function createUploadQueue() {
 
     flight = new AbortController();
     try {
-      const result = await api<{ count: number }>(
+      const result = await api<{ count: number; state?: string }>(
         "upload",
-        { token: photo.token, client_id: photo.id, photo: new Blob([record.buffer], { type: "image/jpeg" }) },
+        {
+          token: photo.token,
+          client_id: photo.id,
+          // Date de prise : elle permet à une photo prise avant la révélation de partir encore après.
+          taken_at: String(photo.createdAt),
+          photo: new Blob([record.buffer], { type: "image/jpeg" }),
+        },
         { timeout: uploadTimeout(photo.bytes), signal: flight.signal },
       );
       await drop([photo]);
+      sent += 1;
       stalled = null;
       step = 0;
       progress();
       // Le compteur du serveur est celui de l'invité qui a pris la photo, pas forcément celui de la session.
       if (photo.token === token) events?.onCount(result.count);
-      // Le serveur répond de nouveau : les photos mises de côté retentent leur chance, après celles qui attendent.
-      const aside = photos.filter((other) => other.state === "failed" && other.reason !== "closed");
+      // Le serveur dit l'état de l'album : s'il est dévoilé, l'appareil photo n'est plus proposé.
+      if (result.state === "closed") events?.onRevealed();
+      // Les photos mises de côté retentent leur chance, après celles qui attendent. Pas celles refusées (« late »).
+      const aside = photos.filter((other) => other.state === "failed" && other.reason !== "late");
       if (aside.length > 0) {
         await Promise.all(aside.map((other) => change(other, { state: "waiting", attempts: 0, reason: undefined })));
         photos = [...photos.filter((other) => !aside.includes(other)), ...aside];
@@ -249,14 +275,16 @@ function createUploadQueue() {
           if (photo.token === token) events?.onLimit(dropped.length);
           return "next";
         }
-        case "closed": // gardées : elles repartiront si la révélation est repoussée
-          await Promise.all(photos.map((other) => change(other, { state: "failed", reason: "closed" })));
-          events?.onEnd("closed", photos.length);
-          return "stop";
+        case "closed":
+          // Album dévoilé et photo non attestée prise avant la révélation : elle ne partira pas.
+          // Gardée quand même (une horloge mal réglée ne doit pas faire perdre une photo), jamais renvoyée.
+          await change(photo, { state: "failed", reason: "late" });
+          events?.onRevealed();
+          return "next";
         case "expired": {
           const lost = photos.length;
           await drop(photos);
-          events?.onEnd("expired", lost);
+          events?.onExpired(lost);
           return "stop";
         }
         case "session":
@@ -349,21 +377,18 @@ function createUploadQueue() {
 
     if (state === "expired" || state === "gone") {
       await Promise.all(saved.map((photo) => store!.remove(photo.seq)));
-      if (state === "expired" && saved.length > 0) events?.onEnd("expired", saved.length);
+      if (state === "expired" && saved.length > 0) events?.onExpired(saved.length);
     } else {
+      // Album dévoilé compris : les photos prises avant la révélation peuvent encore rejoindre l'album.
       photos = saved;
-      if (state === "closed") {
-        await Promise.all(photos.map((photo) => change(photo, { state: "failed", reason: "closed" })));
-        if (photos.length > 0) events?.onEnd("closed", photos.length);
-      } else {
-        // Nouvelle ouverture : les photos mises de côté retentent leur chance.
-        await Promise.all(
-          photos
-            .filter((photo) => photo.state === "failed")
-            .map((photo) => change(photo, { state: "waiting", attempts: 0, reason: undefined })),
-        );
-        photos.forEach((photo) => found.add(photo.seq));
-      }
+      // Nouvelle ouverture : les photos mises de côté retentent leur chance. Celles qu'une ancienne version
+      // avait bloquées (reason « closed ») repartent aussi : c'est tout l'objet du changement.
+      await Promise.all(
+        photos
+          .filter((photo) => photo.state === "failed" && photo.reason !== "late")
+          .map((photo) => change(photo, { state: "waiting", attempts: 0, reason: undefined })),
+      );
+      photos.forEach((photo) => found.add(photo.seq));
     }
 
     // Écouteurs posés une fois pour toute la vie de la page, comme la file elle-même.

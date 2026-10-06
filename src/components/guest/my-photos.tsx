@@ -11,12 +11,14 @@ export function MyPhotos({
   token,
   readOnly = false,
   notice,
+  reload = 0,
   onBack,
   onCount,
 }: {
   token: string;
   readOnly?: boolean; // album dévoilé : plus de retour à l'appareil photo ni de suppression
-  notice?: string; // photos restées sur le téléphone, faute d'avoir pu partir avant la révélation
+  notice?: string | null; // où en sont les photos encore sur le téléphone, après la révélation
+  reload?: number; // change à chaque photo acquittée par le serveur : la grille est relue
   onBack?: () => void;
   onCount: (count: number) => void;
 }) {
@@ -40,7 +42,7 @@ export function MyPhotos({
     return () => {
       cancelled = true;
     };
-  }, [token, onCount]);
+  }, [token, onCount, reload]);
 
   function close() {
     setOpen(null);
@@ -84,7 +86,7 @@ export function MyPhotos({
 
       {readOnly && (
         <p className="mb-5 rounded-2xl bg-sapin-800 px-5 py-4 text-sm leading-relaxed text-brume">
-          L&apos;album a été dévoilé. Il n&apos;est plus possible d&apos;ajouter ou de supprimer des photos.
+          L&apos;album a été dévoilé. Vous ne pouvez plus prendre de nouvelles photos ni en supprimer.
         </p>
       )}
       {readOnly && notice && (

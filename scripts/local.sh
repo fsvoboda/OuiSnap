@@ -17,7 +17,7 @@ DATA="$DATA" php -r '
   // Base créée avant l ajout d une colonne : CREATE TABLE IF NOT EXISTS ne la modifie pas.
   // À faire avant le fichier SQL, dont les index portent sur ces colonnes.
   $added = [
-    "photos" => ["client_id" => "TEXT NULL"],
+    "photos" => ["client_id" => "TEXT NULL", "late_taken_at" => "TEXT NULL"],
     "events" => ["delete_at" => "TEXT NULL", "delete_warned_at" => "TEXT NULL"],
   ];
   foreach ($added as $table => $columns) {

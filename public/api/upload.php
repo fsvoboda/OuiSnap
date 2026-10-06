@@ -18,7 +18,14 @@ function reply_if_received(array $guest, ?string $clientId): void
     $stmt->execute([$guest['id'], $clientId]);
     $id = $stmt->fetchColumn();
     if ($id !== false) {
-        reply(200, ['ok' => true, 'id' => (int) $id, 'count' => photo_count($guest['id']), 'duplicate' => true]);
+        // L'état de l'album est donné même sur un doublon : une page restée ouverte apprend ainsi la révélation.
+        reply(200, [
+            'ok' => true,
+            'id' => (int) $id,
+            'count' => photo_count($guest['id']),
+            'duplicate' => true,
+            'state' => event_state($guest),
+        ]);
     }
 }
 
@@ -35,7 +42,9 @@ if ($clientId === '') {
 // Avant tout autre contrôle : la photo est déjà là, même si l'album s'est fermé ou la limite a été atteinte depuis.
 reply_if_received($guest, $clientId);
 
-require_open($guest);
+// Date de prise déclarée par le téléphone : elle seule permet à une photo d'entrer après la révélation.
+$taken = posted_taken_at();
+$state = require_upload_allowed($guest, $taken);
 $max = guest_max_photos($guest, $guest['email'] !== null);
 $limitMessage = sprintf('Vous avez atteint la limite de %d photos fixée pour cet album.', $max ?? 0);
 
@@ -76,9 +85,14 @@ if (function_exists('imagecreatefromjpeg') && ($source = @imagecreatefromjpeg($p
     }
 }
 
+// Une photo reçue avant la révélation ne garde pas la date déclarée (donnée inutile) ; une photo tardive la garde,
+// pour expliquer son acceptation et pour la compter sur la page des organisateurs.
+// $taken est forcément non nul quand l'album est dévoilé : require_upload_allowed() a déjà refusé le cas contraire.
+$lateTakenAt = $state === 'closed' ? $taken->format('Y-m-d H:i:s') : null;
 try {
-    db()->prepare('INSERT INTO photos (event_id, guest_id, file, width, height, bytes, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$guest['event_id'], $guest['id'], $file, $info[0], $info[1], $upload['size'], $clientId]);
+    db()->prepare('INSERT INTO photos (event_id, guest_id, file, width, height, bytes, client_id, late_taken_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$guest['event_id'], $guest['id'], $file, $info[0], $info[1], $upload['size'], $clientId, $lateTakenAt]);
 } catch (PDOException $e) {
     delete_photo_files($guest['event_id'], $file);
     // Le même envoi arrivé deux fois en même temps : l'autre a été enregistré entre-temps.
@@ -102,4 +116,4 @@ if ($max !== null) {
     }
 }
 
-reply(200, ['ok' => true, 'id' => $id, 'count' => photo_count($guest['id'])]);
+reply(200, ['ok' => true, 'id' => $id, 'count' => photo_count($guest['id']), 'state' => $state]);

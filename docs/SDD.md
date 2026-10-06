@@ -475,7 +475,7 @@ Trois fichiers de `src/lib` fabriquent les PDF des cartes, entièrement dans le 
 
 **Règle du nom de fichier.** Les fichiers téléchargés portent le code de l'événement : `ouisnap-tables-<code>.pdf`, `ouisnap-organisateurs-<code>.pdf`, `ouisnap-qr-<code>.png`, `ouisnap-qr-organisateurs-<code>.png`. Jamais la clé de l'album, qui est le secret du lien privé (voir [10.3](#103-jetons-des-invités-et-clé-dalbum)).
 
-**Limites** (voir aussi [15.1](#151-limites-de-fonctionnement)). Rien n'a été imprimé pour vérifier le rendu sur papier. Les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés. Le rendu n'a pas été vérifié sur Safari. Le tracé emploie `roundRect()` du canevas, récent.
+**Limites** (voir aussi [15.1](#151-limites-de-fonctionnement)). Les cartes ont été imprimées et leurs QR codes lus sur papier le 6 octobre 2026. Les QR codes avaient aussi été relus par un détecteur dans le navigateur, y compris réduits et floutés. Le rendu n'a pas été vérifié sur Safari. Le tracé emploie `roundRect()` du canevas, récent.
 
 ---
 
@@ -1608,7 +1608,6 @@ Uniquement ce que le code ou le README d'origine confirment.
 | Le compteur d'e-mails abandonnés ne baisse qu'à la suppression de l'événement ; le compteur « en attente » compte aussi les messages pas encore essayés | `admin_status()` |
 | L'état de la tâche peut être faussé par un appel web de `cron.php` (signalé « par un appel web ») | `cron.php` |
 | Pas d'application installable ni de mode hors ligne : pas de service worker, donc pas d'envoi en arrière-plan page fermée | Aucun manifeste ni service worker |
-| Cartes imprimables : rendu non vérifié sur papier. Les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés ; rien n'a été imprimé | `card-kit.ts`, `table-card.ts`, `organizer-card.ts` |
 | Cartes imprimables : rendu non vérifié sur Safari. Le tracé emploie `roundRect()` du canevas et les polices chargées par `document.fonts.load()` | `card-kit.ts` |
 | Cartes imprimables : le niveau de correction d'erreurs du QR code dépend de la longueur de l'adresse (H, Q ou M) ; sans niveau qui convienne, le code est tracé sans logo | `coderQr()` dans `card-kit.ts` |
 | Un seul administrateur | `lib.php` |
