@@ -10,7 +10,7 @@ import { AlbumView } from "./album-view";
 import { EventForm } from "./event-form";
 import { EventLinks } from "./event-links";
 import { PasswordReset } from "./password-reset";
-import { buttonClass, formatDate, formatDay, inputClass, type AdminEvent } from "./types";
+import { buttonClass, formatDate, formatDay, inputClass, type AdminEvent, type AdminStatus } from "./types";
 
 type View =
   | { kind: "list" }
@@ -27,9 +27,56 @@ function stateLabel(event: AdminEvent) {
 const megabytes = (bytes: number) =>
   `${(bytes / 1_048_576).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`;
 
+// « 12 minutes », « 5 heures », « 3 jours ».
+function duration(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 1) return "moins d'une minute";
+  if (minutes < 60) return `${minutes} minute${minutes > 1 ? "s" : ""}`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} heure${hours > 1 ? "s" : ""}`;
+  return `${Math.floor(hours / 24)} jours`;
+}
+
+const CRON_WARNING =
+  "Les e-mails d'ouverture et de révélation ne partent qu'à la visite du site.";
+
+// Passage de la tâche planifiée (attendue chaque heure) et e-mails restés en file.
+function MailStatus({ status }: { status: AdminStatus }) {
+  const late = status.cronAge === null || status.cronAge > 2 * 3600;
+  const plural = (count: number) => (count > 1 ? "s" : "");
+  return (
+    <div role="status" className="flex flex-col gap-1 text-sm leading-relaxed text-brume">
+      {status.cronAge === null ? (
+        <p className="text-[#f0a39e]">Tâche planifiée : aucun passage enregistré. {CRON_WARNING}</p>
+      ) : late ? (
+        <p className="text-[#f0a39e]">
+          Tâche planifiée : aucun passage depuis {duration(status.cronAge)}. {CRON_WARNING}
+        </p>
+      ) : (
+        <p>
+          Tâche planifiée : dernier passage il y a {duration(status.cronAge)}
+          {status.cronMode === "web" ? ", par un appel web" : ""}.
+        </p>
+      )}
+      {status.mailsPending > 0 && (
+        <p className="text-or-clair">
+          {status.mailsPending} e-mail{plural(status.mailsPending)} en attente de nouvel essai
+        </p>
+      )}
+      {status.mailsAbandoned > 0 && (
+        <p className="text-[#f0a39e]">
+          {status.mailsAbandoned} e-mail{plural(status.mailsAbandoned)} abandonné
+          {plural(status.mailsAbandoned)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function AdminApp() {
   const [auth, setAuth] = useState<"checking" | "out" | "in">("checking");
   const [events, setEvents] = useState<AdminEvent[]>([]);
+  const [status, setStatus] = useState<AdminStatus | null>(null);
   const [view, setView] = useState<View>({ kind: "list" });
   const [links, setLinks] = useState<number | null>(null); // album dont les liens sont dépliés
   const [error, setError] = useState<string | null>(null);
@@ -56,8 +103,9 @@ export function AdminApp() {
 
   const load = useCallback(async () => {
     try {
-      const result = await api<{ events: AdminEvent[] }>("admin-events", {});
+      const result = await api<{ events: AdminEvent[]; status?: AdminStatus }>("admin-events", {});
       setEvents(result.events);
+      setStatus(result.status ?? null);
       setAuth("in");
       setError(null);
       // Événements sans image de QR code sur le serveur (créés avant cette fonction) : on la dépose.
@@ -259,6 +307,8 @@ export function AdminApp() {
               {error}
             </p>
           )}
+
+          {status && <MailStatus status={status} />}
 
           {events.length === 0 && (
             <p className="py-10 text-center text-brume">

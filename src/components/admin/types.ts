@@ -22,6 +22,15 @@ export type AdminEvent = {
   bytes: number;
 };
 
+// État de l'envoi des e-mails d'ouverture et de révélation.
+export type AdminStatus = {
+  cronLastRun: string | null; // dernier passage de la tâche planifiée
+  cronAge: number | null; // secondes écoulées depuis ce passage, à l'horloge du serveur
+  cronMode: "cli" | "web" | null; // lancée par l'hébergeur, ou par l'appel de son adresse web
+  mailsPending: number; // e-mails de la file pas encore partis
+  mailsAbandoned: number;
+};
+
 export const inputClass =
   "h-12 w-full rounded-xl border border-creme/25 bg-sapin-950/60 px-4 text-base text-creme placeholder:text-brume/60 focus:border-or-clair focus:outline-none";
 

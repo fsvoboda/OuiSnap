@@ -173,7 +173,7 @@ export function AlbumApp() {
             </>
           ) : (
             <p className="font-serif text-2xl italic leading-snug">
-              Votre album se dévoilera le lendemain de l&apos;événement, à midi.
+              La date de révélation de votre album n&apos;est pas encore fixée.
             </p>
           )}
           <p className="max-w-[36ch] text-sm leading-relaxed text-sapin-700">

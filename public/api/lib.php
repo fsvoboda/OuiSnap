@@ -368,6 +368,49 @@ function admin_event_payload(array $event): array
     ];
 }
 
+// Réglage de la table settings (nom, valeur), créé s'il n'existe pas encore.
+function save_setting(string $name, string $value): void
+{
+    $now = gmdate('Y-m-d H:i:s');
+    $update = db()->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE name = ?');
+    $update->execute([$value, $now, $name]);
+    if ($update->rowCount() === 1) {
+        return;
+    }
+    // Aucune ligne modifiée : réglage absent, ou déjà à cette valeur (MySQL ne compte que les lignes changées).
+    try {
+        db()->prepare('INSERT INTO settings (name, value, updated_at) VALUES (?, ?, ?)')->execute([$name, $value, $now]);
+    } catch (PDOException $e) {
+        if ((string) $e->getCode() !== '23000') {
+            throw $e;
+        }
+    }
+}
+
+// État de l'envoi des e-mails, pour l'administration : dernier passage de la tâche planifiée et file d'attente.
+// cronMode : « cli » (lancée par l'hébergeur) ou « web » (appel de l'adresse de cron.php).
+function admin_status(): array
+{
+    $status = ['cronLastRun' => null, 'cronAge' => null, 'cronMode' => null, 'mailsPending' => 0, 'mailsAbandoned' => 0];
+    try {
+        $settings = db()->query("SELECT name, value FROM settings WHERE name IN ('cron_last_run', 'cron_last_mode')")
+            ->fetchAll(PDO::FETCH_KEY_PAIR);
+        $last = utc($settings['cron_last_run'] ?? null);
+        if ($last) {
+            $status['cronLastRun'] = $last->format(DATE_ATOM);
+            $status['cronAge'] = max(0, time() - $last->getTimestamp()); // en secondes, à l'horloge du serveur
+            $status['cronMode'] = ($settings['cron_last_mode'] ?? '') === 'cli' ? 'cli' : 'web';
+        }
+        $status['mailsPending'] = (int) db()
+            ->query('SELECT COUNT(*) FROM mail_queue WHERE sent_at IS NULL AND abandoned_at IS NULL')->fetchColumn();
+        $status['mailsAbandoned'] = (int) db()
+            ->query('SELECT COUNT(*) FROM mail_queue WHERE abandoned_at IS NOT NULL')->fetchColumn();
+    } catch (Throwable $e) {
+        error_log("OuiSnap : état de l'envoi des e-mails illisible : " . $e->getMessage());
+    }
+    return $status;
+}
+
 function delete_photo_files(int $eventId, string $file): void
 {
     @unlink(photo_path($eventId, $file));

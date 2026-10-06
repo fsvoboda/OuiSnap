@@ -22,8 +22,8 @@ const surprise = [
     texte: "Vous voyez seulement qui photographie, et combien. Les images restent une surprise.",
   },
   {
-    titre: "Le lendemain à midi",
-    texte: "L'album se dévoile. Vous le découvrez d'un coup, rangé invité par invité.",
+    titre: "Le lendemain",
+    texte: "L'album se dévoile à l'heure convenue avec vous, le lendemain à midi le plus souvent. Vous le découvrez d'un coup, rangé invité par invité.",
   },
   {
     titre: "Vos coups de cœur",

@@ -24,4 +24,4 @@ $rows = db()->query(
      ORDER BY e.id DESC'
 )->fetchAll();
 
-reply(200, ['ok' => true, 'events' => array_map('admin_event_payload', $rows)]);
+reply(200, ['ok' => true, 'events' => array_map('admin_event_payload', $rows), 'status' => admin_status()]);

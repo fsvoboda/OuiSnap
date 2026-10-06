@@ -368,16 +368,65 @@ function send_mail(string $to, array $mail, ?string $replyTo = null): bool
     return mail($to, mb_encode_mimeheader($mail['subject'], 'UTF-8', 'B'), $body, $headers, '-f' . $from);
 }
 
-// Envoie les messages en attente. Appelé à chaque visite utile et par la tâche planifiée :
-// chaque message n'est envoyé qu'une fois par album.
-function send_due_mails(): void
+// --- File d'attente des messages d'ouverture et de révélation ---------------
+// Table mail_queue : une ligne par message à envoyer. Un envoi en échec est retenté plus tard ;
+// un message envoyé ne repart jamais. Le corps n'est pas gardé : il est reconstruit à chaque essai.
+
+const MAIL_OPEN_ORGANIZER = 'open_organizer';     // ouverture, aux organisateurs
+const MAIL_REVEAL_GUEST = 'reveal_guest';         // révélation, à un invité
+const MAIL_REVEAL_ORGANIZER = 'reveal_organizer'; // révélation, aux organisateurs
+
+// Attente (en secondes) avant chaque essai, selon le nombre d'essais déjà faits :
+// tout de suite, puis 10 min, 30 min, 2 h, 6 h et 12 h après l'essai précédent. Au sixième échec, abandon.
+const MAIL_RETRY_DELAYS = [0, 600, 1800, 7200, 21600, 43200];
+
+// Met en file les messages arrivés à échéance, puis envoie ce qui attend. Appelé à chaque visite utile
+// et par la tâche planifiée. $limit et $seconds bornent le travail : une visite ne doit pas être ralentie.
+// Une panne de la file (table absente, base occupée) est notée dans le journal sans faire échouer la page.
+function send_due_mails(int $limit = 20, float $seconds = 8.0): void
 {
-    send_due_open_mails();
-    send_due_reveal_mails();
+    try {
+        queue_due_open_mails();
+        queue_due_reveal_mails();
+        flush_mail_queue($limit, $seconds);
+    } catch (PDOException $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        error_log("OuiSnap : file d'attente des e-mails en panne : " . $e->getMessage());
+    }
+}
+
+// Réservation : la date est écrite une seule fois par album, même si deux visites arrivent en même temps.
+// Celle qui l'écrit met les messages en file dans la même transaction : tout est enregistré, ou rien.
+// $column : open_mail_sent_at ou reveal_mail_sent_at.
+function claim_event_mails(array $event, string $column, callable $queue): void
+{
+    $pdo = db();
+    $pdo->beginTransaction();
+    $claim = $pdo->prepare("UPDATE events SET $column = ? WHERE id = ? AND $column IS NULL");
+    $claim->execute([gmdate('Y-m-d H:i:s'), (int) $event['id']]);
+    if ($claim->rowCount() !== 1) {
+        $pdo->rollBack();
+        return;
+    }
+    $queue();
+    $pdo->commit();
+}
+
+// Message aux organisateurs : la contrainte d'unicité et le NOT EXISTS interdisent de le mettre deux fois en file.
+function queue_organizer_mail(int $eventId, string $kind): void
+{
+    db()->prepare(
+        'INSERT INTO mail_queue (event_id, kind, guest_id, recipient, created_at)
+         SELECT e.id, ?, NULL, 0, ? FROM events e
+         WHERE e.id = ?
+           AND NOT EXISTS (SELECT 1 FROM mail_queue q WHERE q.event_id = e.id AND q.kind = ? AND q.recipient = 0)'
+    )->execute([$kind, gmdate('Y-m-d H:i:s'), $eventId, $kind]);
 }
 
 // Message d'ouverture aux organisateurs, dès que l'heure de début est passée.
-function send_due_open_mails(): void
+function queue_due_open_mails(): void
 {
     $events = db()->query(
         'SELECT * FROM events WHERE open_mail_sent_at IS NULL AND organizer_email IS NOT NULL AND album_key IS NOT NULL'
@@ -386,55 +435,169 @@ function send_due_open_mails(): void
         if (in_array(event_state($event), ['upcoming', 'expired'], true)) {
             continue;
         }
-        $claim = db()->prepare('UPDATE events SET open_mail_sent_at = ? WHERE id = ? AND open_mail_sent_at IS NULL');
-        $claim->execute([gmdate('Y-m-d H:i:s'), (int) $event['id']]);
-        if ($claim->rowCount() !== 1) {
-            continue;
-        }
-        // Album déjà dévoilé au moment de l'envoi : seul le message de révélation a un sens.
-        if (is_revealed($event)) {
-            continue;
-        }
-        if (!send_mail($event['organizer_email'], organizer_open_mail($event))) {
-            error_log("OuiSnap : échec de l'envoi du message d'ouverture à {$event['organizer_email']}");
-        }
+        claim_event_mails($event, 'open_mail_sent_at', function () use ($event) {
+            // Album déjà dévoilé : seul le message de révélation a un sens.
+            if (!is_revealed($event)) {
+                queue_organizer_mail((int) $event['id'], MAIL_OPEN_ORGANIZER);
+            }
+        });
     }
 }
 
 // Messages de révélation des albums qui viennent d'être dévoilés : photographes, puis organisateurs.
-function send_due_reveal_mails(): void
+function queue_due_reveal_mails(): void
 {
     $events = db()->query('SELECT * FROM events WHERE reveal_mail_sent_at IS NULL')->fetchAll();
     foreach ($events as $event) {
         if (!is_revealed($event)) {
             continue;
         }
-        // Réservation : si deux visites arrivent en même temps, une seule passe.
-        $claim = db()->prepare('UPDATE events SET reveal_mail_sent_at = ? WHERE id = ? AND reveal_mail_sent_at IS NULL');
-        $claim->execute([gmdate('Y-m-d H:i:s'), (int) $event['id']]);
+        claim_event_mails($event, 'reveal_mail_sent_at', function () use ($event) {
+            $eventId = (int) $event['id'];
+            // Seuls les invités ayant laissé une adresse et envoyé au moins une photo sont prévenus.
+            db()->prepare(
+                'INSERT INTO mail_queue (event_id, kind, guest_id, recipient, created_at)
+                 SELECT g.event_id, ?, g.id, g.id, ? FROM guests g
+                 WHERE g.event_id = ? AND g.email IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM photos p WHERE p.guest_id = g.id)
+                   AND NOT EXISTS (SELECT 1 FROM mail_queue q WHERE q.event_id = g.event_id AND q.kind = ? AND q.recipient = g.id)'
+            )->execute([MAIL_REVEAL_GUEST, gmdate('Y-m-d H:i:s'), $eventId, MAIL_REVEAL_GUEST]);
+            if (!empty($event['organizer_email']) && !empty($event['album_key'])) {
+                queue_organizer_mail($eventId, MAIL_REVEAL_ORGANIZER);
+            }
+        });
+    }
+}
+
+// Reconstruit un message de la file à partir de l'événement et de l'invité tels qu'ils sont maintenant.
+// Renvoie ['send', adresse, message], ['retry', raison] (trop tôt : nouvel essai plus tard)
+// ou ['abandon', raison] (le message n'a plus lieu d'être).
+function queued_mail(array $row): array
+{
+    $stmt = db()->prepare('SELECT * FROM events WHERE id = ?');
+    $stmt->execute([(int) $row['event_id']]);
+    $event = $stmt->fetch();
+    if (!$event) {
+        return ['abandon', 'événement supprimé'];
+    }
+    if (is_expired($event)) {
+        return ['abandon', 'album clôturé'];
+    }
+
+    if ($row['kind'] === MAIL_REVEAL_GUEST) {
+        if (!is_revealed($event)) {
+            return ['retry', 'album pas encore dévoilé'];
+        }
+        $stmt = db()->prepare(
+            'SELECT g.name, g.email, g.link_token, (SELECT COUNT(*) FROM photos p WHERE p.guest_id = g.id) AS total
+             FROM guests g WHERE g.id = ? AND g.event_id = ?'
+        );
+        $stmt->execute([(int) $row['guest_id'], (int) $event['id']]);
+        $guest = $stmt->fetch();
+        if (!$guest) {
+            return ['abandon', 'invité supprimé'];
+        }
+        if (empty($guest['email'])) {
+            return ['abandon', 'invité sans adresse'];
+        }
+        if ((int) $guest['total'] === 0) {
+            return ['abandon', 'invité sans photo'];
+        }
+        return ['send', $guest['email'], reveal_mail($event, $guest)];
+    }
+
+    if (empty($event['organizer_email']) || empty($event['album_key'])) {
+        return ['abandon', "pas d'adresse d'organisateurs"];
+    }
+    if ($row['kind'] === MAIL_OPEN_ORGANIZER) {
+        if (is_revealed($event)) {
+            return ['abandon', 'album déjà dévoilé'];
+        }
+        if (event_state($event) === 'upcoming') {
+            return ['retry', 'album pas encore ouvert'];
+        }
+        return ['send', $event['organizer_email'], organizer_open_mail($event)];
+    }
+    if ($row['kind'] === MAIL_REVEAL_ORGANIZER) {
+        if (!is_revealed($event)) {
+            return ['retry', 'album pas encore dévoilé'];
+        }
+        $stmt = db()->prepare('SELECT COUNT(*), COUNT(DISTINCT guest_id) FROM photos WHERE event_id = ?');
+        $stmt->execute([(int) $event['id']]);
+        [$photos, $guests] = $stmt->fetch(PDO::FETCH_NUM);
+        return ['send', $event['organizer_email'], organizer_reveal_mail($event, (int) $photos, (int) $guests)];
+    }
+    return ['abandon', 'nature de message inconnue'];
+}
+
+function abandon_queued_mail(int $id, string $reason): void
+{
+    db()->prepare('UPDATE mail_queue SET abandoned_at = ? WHERE id = ? AND sent_at IS NULL AND abandoned_at IS NULL')
+        ->execute([gmdate('Y-m-d H:i:s'), $id]);
+    error_log("OuiSnap : e-mail $id de la file abandonné ($reason).");
+}
+
+// Envoie les messages de la file dont l'heure est venue : au plus $limit messages et $seconds secondes par appel.
+function flush_mail_queue(int $limit = 20, float $seconds = 8.0): void
+{
+    $max = count(MAIL_RETRY_DELAYS);
+    $now = time();
+    $date = fn (int $time) => gmdate('Y-m-d H:i:s', $time);
+
+    // Un message est dû s'il n'a jamais été essayé, ou si son dernier essai est assez ancien pour son rang.
+    $due = ['attempts = 0'];
+    $params = [];
+    for ($attempts = 1; $attempts < $max; $attempts++) {
+        $due[] = '(attempts = ? AND last_attempt_at <= ?)';
+        array_push($params, $attempts, $date($now - MAIL_RETRY_DELAYS[$attempts]));
+    }
+    // Essais épuisés sans abandon noté (requête interrompue en plein envoi) : repris ici pour être clos.
+    $due[] = '(attempts >= ? AND last_attempt_at <= ?)';
+    array_push($params, $max, $date($now - MAIL_RETRY_DELAYS[$max - 1]));
+
+    $stmt = db()->prepare(
+        'SELECT id, event_id, kind, guest_id, attempts FROM mail_queue
+         WHERE sent_at IS NULL AND abandoned_at IS NULL AND (' . implode(' OR ', $due) . ')
+         ORDER BY id LIMIT ' . max(1, $limit)
+    );
+    $stmt->execute($params);
+
+    $started = microtime(true);
+    foreach ($stmt->fetchAll() as $row) {
+        if (microtime(true) - $started > $seconds) {
+            break;
+        }
+        $id = (int) $row['id'];
+        $attempts = (int) $row['attempts'];
+        if ($attempts >= $max) {
+            abandon_queued_mail($id, "$attempts essais sans succès");
+            continue;
+        }
+        // Réservation de l'essai : si deux requêtes prennent le même message, une seule l'envoie.
+        $claim = db()->prepare(
+            'UPDATE mail_queue SET attempts = ?, last_attempt_at = ?
+             WHERE id = ? AND attempts = ? AND sent_at IS NULL AND abandoned_at IS NULL'
+        );
+        $claim->execute([$attempts + 1, $date(time()), $id, $attempts]);
         if ($claim->rowCount() !== 1) {
             continue;
         }
-        // Seuls les invités ayant laissé une adresse et envoyé au moins une photo sont prévenus.
-        $stmt = db()->prepare(
-            'SELECT g.name, g.email, g.link_token, COUNT(p.id) AS total
-             FROM guests g JOIN photos p ON p.guest_id = g.id
-             WHERE g.event_id = ? AND g.email IS NOT NULL
-             GROUP BY g.id, g.name, g.email, g.link_token'
-        );
-        $stmt->execute([(int) $event['id']]);
-        foreach ($stmt->fetchAll() as $guest) {
-            if (!send_mail($guest['email'], reveal_mail($event, $guest))) {
-                error_log("OuiSnap : échec de l'envoi du message de révélation à {$guest['email']}");
-            }
+        $attempts++;
+
+        $result = queued_mail($row);
+        if ($result[0] === 'abandon') {
+            abandon_queued_mail($id, $result[1]);
+            continue;
         }
-        if (!empty($event['organizer_email']) && !empty($event['album_key'])) {
-            $stmt = db()->prepare('SELECT COUNT(*), COUNT(DISTINCT guest_id) FROM photos WHERE event_id = ?');
-            $stmt->execute([(int) $event['id']]);
-            [$photos, $guests] = $stmt->fetch(PDO::FETCH_NUM);
-            if (!send_mail($event['organizer_email'], organizer_reveal_mail($event, (int) $photos, (int) $guests))) {
-                error_log("OuiSnap : échec de l'envoi du message de révélation à {$event['organizer_email']}");
-            }
+        if ($result[0] === 'send' && send_mail($result[1], $result[2])) {
+            db()->prepare('UPDATE mail_queue SET sent_at = ? WHERE id = ?')->execute([$date(time()), $id]);
+            continue;
+        }
+        $reason = $result[0] === 'send' ? "échec de l'envoi à {$result[1]}" : $result[1];
+        if ($attempts >= $max) {
+            abandon_queued_mail($id, "$attempts essais sans succès, dernier : $reason");
+        } else {
+            error_log("OuiSnap : e-mail $id de la file ({$row['kind']}), essai $attempts sur $max : $reason. Nouvel essai plus tard.");
         }
     }
 }

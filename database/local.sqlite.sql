@@ -87,3 +87,21 @@ CREATE TABLE IF NOT EXISTS admin_password_resets (
 );
 
 CREATE INDEX IF NOT EXISTS admin_password_resets_time ON admin_password_resets (created_at);
+
+-- File d'attente des e-mails d'ouverture et de révélation (voir database/016_mail_queue.sql).
+CREATE TABLE IF NOT EXISTS mail_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL REFERENCES events (id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  guest_id INTEGER NULL REFERENCES guests (id) ON DELETE CASCADE,
+  recipient INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TEXT NULL,
+  sent_at TEXT NULL,
+  abandoned_at TEXT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (event_id, kind, recipient)
+);
+
+CREATE INDEX IF NOT EXISTS mail_queue_guest ON mail_queue (guest_id);
+CREATE INDEX IF NOT EXISTS mail_queue_pending ON mail_queue (sent_at, abandoned_at);
