@@ -293,9 +293,12 @@ stateDiagram-v2
   [*] --> waiting: photo prise, fiche écrite
   waiting --> [*]: accusé du serveur (ou doublon reconnu)
   waiting --> [*]: refus définitif (limite, size, format, expired), fiche illisible
-  waiting --> failed: 5e essai échoué, ou album dévoilé (closed)
+  waiting --> failed: 5e essai échoué
+  waiting --> failed: refus « late » (photo non attestée prise avant la révélation)
   failed --> waiting: envoi réussi (autre photo), ou nouvelle ouverture de la page
 ```
+
+`failed --> waiting` ne concerne pas les fiches `reason: "late"` : refusées pour leur date de prise, elles sont gardées sur le téléphone (jusqu'à `KEEP_MS`) mais ne sont plus jamais renvoyées, même si l'administrateur repousse la révélation. Une fiche `closed` laissée par une version antérieure, elle, repart (voir « À l'ouverture de la page »).
 
 #### Magasin sur le téléphone (`photo-store.ts`)
 
@@ -325,11 +328,11 @@ Pourquoi deux magasins : à la réouverture, seules les fiches sont chargées ; 
 | `id` | Identifiant client, 32 caractères hexadécimaux tirés par `crypto.getRandomValues` (même forme que `photos.file`) ; envoyé au serveur comme `client_id` |
 | `code` | Code de l'événement, en majuscules |
 | `token` | Jeton de l'invité au moment de la prise |
-| `createdAt` | Date de prise, en millisecondes |
+| `createdAt` | Date de prise, en millisecondes ; **envoyée au serveur** (`taken_at`), qui s'en sert pour accepter une photo après la révélation |
 | `bytes` | Poids de l'image, recontrôlé à la relecture |
 | `attempts` | Essais échoués avec une réponse ou un délai dépassé |
 | `state` | `waiting` ou `failed` ; « en cours d'envoi » n'est jamais écrit |
-| `reason` | Code de l'erreur, si `failed` (`timeout`, `server`, `closed`…) |
+| `reason` | Code de l'erreur, si `failed` (`timeout`, `server`, `late`…). `late` : refusée parce qu'elle n'est pas attestée prise avant la révélation ; jamais retentée. Une ancienne version écrivait aussi `closed`. |
 
 #### Boucle d'envoi
 
@@ -338,7 +341,7 @@ Pourquoi deux magasins : à la réouverture, seules les fiches sont chargées ; 
 1. Si l'album était indiqué pas encore ouvert, l'état est demandé par `join` (quelques octets) au lieu de renvoyer la photo entière ; l'envoi ne repart que si l'état n'est plus `upcoming`.
 2. Si le jeton de la fiche n'est plus reconnu mais que l'invité s'est réinscrit depuis, la fiche prend le nouveau jeton.
 3. Relecture de la fiche et des octets. Fiche absente : un autre onglet l'a envoyée, elle sort de la liste et le compteur est redemandé par `join`. Octets absents, poids différent ou début autre que `FF D8` : fiche supprimée et message « 1 photo en attente était illisible et n'a pas pu être envoyée. »
-4. `api("upload", { token, client_id, photo }, { timeout, signal })`.
+4. `api("upload", { token, client_id, taken_at, photo }, { timeout, signal })`. `taken_at` est `String(createdAt)`.
 
 Délai maximal d'un envoi : 60 secondes, plus 30 secondes par Mo, plafonné à 180 secondes (0,5 Mo : 75 s ; 3 Mo : 150 s). `JOIN_TIMEOUT_MS` : 30 secondes pour les appels `join`.
 
@@ -348,10 +351,10 @@ Les constantes sont en tête de `upload-queue.ts` : `KEEP_MS` (7 jours), `MAX_AT
 
 | Réponse | Traitement |
 |---|---|
-| Succès (y compris `duplicate: true`) | Fiche et octets supprimés, `onCount` avec le compteur du serveur (seulement si la fiche est celle de l'invité en cours). Les photos mises de côté (hors `closed`) repassent en `waiting`, essais remis à zéro, placées après celles qui attendent. |
+| Succès (y compris `duplicate: true`) | Fiche et octets supprimés, compteur `sent` augmenté, `onCount` avec le compteur du serveur (seulement si la fiche est celle de l'invité en cours). Si la réponse porte `state: "closed"`, `onRevealed()` : l'appareil photo n'est plus proposé. Les photos mises de côté (hors `late`) repassent en `waiting`, essais remis à zéro, placées après celles qui attendent. |
 | `limit` (409) | Les photos `waiting` du même invité sont supprimées, `onLimit(nombre)`, message « Limite de N photos atteinte : X photos n'ont pas été envoyées. » |
-| `closed` (403, album dévoilé) | Toutes les fiches passent en `failed` avec `reason: "closed"`, gardées. `onEnd("closed", nombre)` : lecture seule et message sur « Mes photos ». La file s'arrête. |
-| `expired` (410) | Fiches de l'événement supprimées. `onEnd("expired", nombre)`. La file s'arrête. |
+| `closed` (403, album dévoilé et photo non attestée prise avant la révélation) | La fiche passe en `failed` avec `reason: "late"`, elle est gardée ; la file continue (`next`) ; `onRevealed()` est appelée. Les autres fiches ne sont pas touchées : elles partent avec leur propre date. |
+| `expired` (410) | Fiches de l'événement supprimées. `onExpired(nombre)`. La file s'arrête. |
 | `upcoming` (403) | File en pause (`stalled = "upcoming"`), fiches gardées, nouvel essai à 60 s, avec contrôle de l'état par `join` avant chaque renvoi. |
 | `session` (401) | Vérification par `join(code, token)`, voir ci-dessous. |
 | `size`, `format` | Fiche supprimée, message du serveur, les suivantes continuent. |
@@ -381,7 +384,7 @@ Deux onglets : pas de verrou (sur iPhone, un onglet gelé qui tiendrait un verro
 #### À l'ouverture de la page (`start`)
 
 1. `openStore()`, puis purge des fiches de plus de 7 jours, tous événements confondus.
-2. Lecture des fiches du code. `expired` ou `gone` (code inconnu) : toutes supprimées (message si `expired`). `closed` : toutes en `failed`, `onEnd("closed", nombre)`. Sinon : les fiches `failed` repassent en `waiting` avec `attempts: 0`, et les fiches lues sont marquées « retrouvées ».
+2. Lecture des fiches du code. `expired` ou `gone` (code inconnu) : toutes supprimées (message `onExpired` si `expired`). Sinon, l'état `closed` est traité comme `open` : les fiches `failed` dont `reason !== "late"` repassent en `waiting` avec `attempts: 0`, y compris celles de `reason: "closed"` qu'une version antérieure avait bloquées (c'est tout l'objet du changement), et les fiches lues sont marquées « retrouvées ».
 3. Écouteurs `online`, `pageshow` et `visibilitychange` posés une fois pour toute la vie de la page.
 
 `GuestApp` appelle `uploadQueue.open(...)` sans l'attendre, puis `setToken`. `open()` est idempotent : un second appel ne fait que remplacer les réactions (l'effet de démarrage tourne deux fois en développement).
@@ -390,9 +393,9 @@ Page rouverte sans réseau : l'appel `join` de `GuestApp` a un délai maximal de
 
 #### État lu par l'interface
 
-Instantané immuable, remplacé et jamais modifié (sinon `useSyncExternalStore` boucle) : `{ waiting, restored, blocked, stalled, durable, awake }`. `stalled` vaut `null`, `"network"`, `"slow"`, `"server"` ou `"upcoming"`. `getServerSnapshot` renvoie une constante vide : la page est prérendue. La fonction pure `sendingStatus()` de `guest-app.tsx` en tire le texte de statut ; les textes figurent dans le [PDD](PDD.md) (P5). `notice` garde la priorité sur ce statut.
+Instantané immuable, remplacé et jamais modifié (sinon `useSyncExternalStore` boucle) : `{ waiting, restored, blocked, refused, sent, stalled, durable, awake }`. `refused` : fiches `late` ; `blocked` : fiches mises de côté après 5 essais, `late` exclues ; `sent` : photos acquittées depuis l'ouverture de la page. `stalled` vaut `null`, `"network"`, `"slow"`, `"server"` ou `"upcoming"`. `getServerSnapshot` renvoie une constante vide : la page est prérendue. La fonction pure `sendingStatus()` de `guest-app.tsx` en tire le texte de statut quand l'album est ouvert ; `revealedStatus()`, placée à côté, fait de même une fois l'album dévoilé (« N photos prises avant la révélation partent vers l'album… », « … ont rejoint l'album », « … n'ont pas pu rejoindre l'album : elles n'ont pas été prises avant la révélation »). Les textes figurent dans le [PDD](PDD.md) (P5). `notice` garde la priorité sur ces statuts. Après la révélation, `GuestApp` affiche `MyPhotos` en lecture seule avec `notice ?? revealedStatus(queue)` et lui passe `reload={queue.sent}` : la grille est relue à chaque photo acquittée.
 
-Compteurs : `taken = count + waiting`, borné à la limite ; les fiches `failed` ne comptent pas. « Vous avez envoyé vos N photos. Merci ! » seulement si plus rien n'attend. Le front applique lui-même la limite restante avant d'ajouter ; le serveur la revérifie.
+Compteurs : `taken = count + waiting`, borné à la limite ; les fiches `failed` ne comptent pas. Après la révélation il n'y a plus d'appareil photo, donc plus de compteur « N / max » : le total est celui de la grille. « Vous avez envoyé vos N photos. Merci ! » seulement si plus rien n'attend. Le front applique lui-même la limite restante avant d'ajouter ; le serveur la revérifie.
 
 Fermeture de la page : tant que `waiting > 0`, `beforeunload` demande confirmation.
 
@@ -495,6 +498,8 @@ Définies dans [`../public/api/lib.php`](../public/api/lib.php).
 - **Erreurs PHP** : jamais affichées (`display_errors` à 0), écrites dans le journal du serveur avec le préfixe « OuiSnap ».
 - **Requêtes SQL** : toutes préparées (PDO, mode exception).
 
+Cette évolution (photos prises avant la révélation) n'ajoute aucun code d'erreur commun : un refus pour date de prise garde le code `closed` d'avant.
+
 Codes d'erreur communs :
 
 | Statut | `error` | Cause |
@@ -516,7 +521,7 @@ Codes d'erreur communs :
 | Fichier | Rôle | Accès | Entrées | Réponse | Erreurs propres |
 |---|---|---|---|---|---|
 | `join.php` | Découvrir un événement, reprendre une session ou s'inscrire | Public, avec le code | `code` ; puis `token`, ou `name` et `email` (facultatif) | `token`, `name`, `event` (`title`, `kind`, `maxPhotos`, `emailBonus`, `state`, `opensAt`), `count` | 404 `event` (code inconnu), 403 `upcoming`, 403 `closed`, 410 `expired`, 409 `full` (nombre de photographes atteint), 422 `email` |
-| `upload.php` | Recevoir une photo | Jeton | `token`, fichier `photo`, `client_id` (facultatif : 32 caractères hexadécimaux) | `id`, `count`, et `duplicate: true` si la photo avait déjà été reçue | 400 `client_id` (identifiant mal formé), 400 `upload`, 413 `size` (plus de 15 Mo), 415 `format` (pas un JPEG, ou côté de plus de 8000 px), 409 `limit`, 403 `upcoming` / `closed`, 410 `expired`, 500 `server` |
+| `upload.php` | Recevoir une photo | Jeton | `token`, fichier `photo`, `client_id` (facultatif : 32 caractères hexadécimaux), `taken_at` (facultatif : date de prise en millisecondes depuis 1970) | `id`, `count`, `state` (`open` ou `closed`, y compris sur un doublon) et `duplicate: true` si la photo avait déjà été reçue | 400 `client_id` (identifiant mal formé), 400 `upload`, 413 `size` (plus de 15 Mo), 415 `format` (pas un JPEG, ou côté de plus de 8000 px), 409 `limit`, 403 `upcoming` / `closed`, 410 `expired`, 500 `server` |
 | `photos.php` | Lister ses photos | Jeton | `token` | `photos` (`id`, `width`, `height`, `liked`), `count` | 410 `expired` |
 | `photo.php` | Image d'une de ses photos | Jeton | `token`, `id`, `size` (`thumb` ou autre) | Image JPEG | 404 `photo`, 410 `expired` |
 | `delete.php` | Supprimer une de ses photos | Jeton | `token`, `id` | `count` | 404 `photo`, 403 `upcoming` / `closed`, 410 `expired` |
@@ -525,9 +530,9 @@ Ordre des contrôles de `upload.php`, qui compte :
 
 1. `current_guest()` : 401 `session` si le jeton est inconnu.
 2. Lecture de `client_id`. Vide : `null`, l'envoi est accepté comme avant (page chargée avant cette version). Non conforme à `/^[a-f0-9]{32}$/` : 400 `client_id`.
-3. Si l'identifiant est déjà connu pour cet invité (`SELECT id FROM photos WHERE guest_id = ? AND client_id = ?`) : réponse 200 `{ ok, id, count, duplicate: true }`, sans rien écrire. Ce contrôle passe **avant** `require_open`, les contrôles de fichier et la limite : une photo déjà reçue n'est jamais refusée, même si l'album s'est fermé ou la limite atteinte depuis. La fonction `reply_if_received()` porte ce contrôle.
-4. `require_open()`, contrôles du fichier, limite, écriture du fichier et de la vignette (inchangés).
-5. `INSERT` dans un `try/catch (PDOException)` : en cas d'échec, fichier et vignette sont supprimés (`delete_photo_files`) ; si le code SQLSTATE est `23000` (violation de la clé unique : le même envoi est arrivé deux fois en même temps), la réponse est celle du point 3 si l'autre enregistrement existe maintenant ; sinon `error_log` et 500 `server`.
+3. Si l'identifiant est déjà connu pour cet invité (`SELECT id FROM photos WHERE guest_id = ? AND client_id = ?`) : réponse 200 `{ ok, id, count, duplicate: true, state }`, sans rien écrire (`state` : une page restée ouverte apprend ainsi la révélation). Ce contrôle passe **avant** `require_upload_allowed`, les contrôles de fichier et la limite : une photo déjà reçue n'est jamais refusée, même si l'album s'est fermé ou la limite atteinte depuis. La fonction `reply_if_received()` porte ce contrôle.
+4. `posted_taken_at()` lit `taken_at`, puis `require_upload_allowed($guest, $taken)` contrôle l'état de l'album : 410 `expired`, 403 `upcoming`, et 403 `closed` si l'album est dévoilé et que la date de prise ne tient pas dans la fenêtre (`taken_before_reveal()`). Elle rend l'état (`open` ou `closed`). Puis contrôles du fichier, limite, écriture du fichier et de la vignette (inchangés). L'état passe donc avant la limite : une photo tardive refusée par la date l'est en 403, une photo tardive acceptée par la date mais au-delà du quota l'est en 409 `limit`.
+5. `INSERT` (qui écrit aussi `late_taken_at`, renseignée seulement si l'état est `closed`) dans un `try/catch (PDOException)` : en cas d'échec, fichier et vignette sont supprimés (`delete_photo_files`) ; si le code SQLSTATE est `23000` (violation de la clé unique : le même envoi est arrivé deux fois en même temps), la réponse est celle du point 3 si l'autre enregistrement existe maintenant ; sinon `error_log` et 500 `server`.
 6. Recomptage du rang pour la limite, puis réponse finale (inchangés).
 
 Le SQL est commun aux deux moteurs : ni `INSERT IGNORE` ni `ON CONFLICT`. Le code `23000` est le même pour MySQL et SQLite d'après leur documentation ; ce chemin n'a pas été exécuté (aucun test ne peut envoyer deux fois le même identifiant en même temps : `php -S` traite une requête à la fois).
@@ -542,7 +547,7 @@ Les trois usages de `join.php` :
 
 | Fichier | Rôle | Accès | Entrées | Réponse | Erreurs propres |
 |---|---|---|---|---|---|
-| `album.php` | État de l'album | Clé | `token` | `title`, `kind`, `code`, `revealAt`, `revealed`, `closesAt`, `deletesAt` (voir ci-dessous), `total`, `guests` (`name`, `count`) ; après la révélation seulement : `photos` (`id`, `width`, `height`, `guest`, `liked`, `name`) | — |
+| `album.php` | État de l'album | Clé | `token` | `title`, `kind`, `code`, `revealAt`, `revealed`, `closesAt`, `deletesAt` (voir ci-dessous), `total`, `guests` (`name`, `count`) ; après la révélation seulement : `photos` (`id`, `width`, `height`, `guest`, `liked`, `name`) et `late` (nombre de photos dont `late_taken_at` n'est pas nul, 0 s'il n'y en a pas) | — |
 | `album-photo.php` | Image d'une photo de l'album | Clé, album dévoilé | `token`, `id`, `size` | Image JPEG | 403 `locked`, 404 `photo` |
 | `album-like.php` | Poser ou retirer un coup de cœur | Clé, album dévoilé | `token`, `id`, `liked` (`1` ou autre) | `liked` | 403 `locked`, 404 `photo` |
 | `album-zip.php` | Télécharger tout l'album | Clé, album dévoilé | `token` | Archive ZIP `album-<nom>.zip` | 403 `locked`, 404 `empty`, 413 `size` (plus de 4 Go ou de 65 535 fichiers) |
@@ -614,7 +619,7 @@ stateDiagram-v2
 |---|---|---|---|
 | `upcoming` | Pas encore ouvert | Écran d'attente ; pas d'inscription ni d'envoi | Compteurs (vides) |
 | `open` | Les invités photographient | Inscription, envoi, suppression | Qui a posté, et combien. Pas les photos. |
-| `closed` | Album dévoilé | Lecture seule de ses propres photos | Photos, coups de cœur, ZIP |
+| `closed` | Album dévoilé | Lecture seule de ses propres photos ; les photos déjà prises et en attente partent encore | Photos, coups de cœur, ZIP |
 | `expired` | Album clôturé | Plus d'accès | Plus d'accès |
 
 Dans l'administration, ces états s'affichent « À venir », « En cours », « Révélé », « Clôturé ».
@@ -627,7 +632,11 @@ Fonctions de [`../public/api/lib.php`](../public/api/lib.php) :
 | `is_expired($event)` | Vrai si `closes_at` est renseigné et dépassé. |
 | `reveal_at($event)` | Date de révélation : `events.reveal_at` s'il est renseigné ; sinon le lendemain de `wedding_date` à 12h00, heure de Paris ; sinon aucune. |
 | `is_revealed($event)` | Vrai si la date de révélation est dépassée. |
-| `require_open($event)` | Bloque avec 410 `expired`, 403 `upcoming` ou 403 `closed`. |
+| `require_open($event)` | Bloque avec 410 `expired`, 403 `upcoming` ou 403 `closed`. Plus utilisée par `upload.php` (reste employée par `join.php` et `delete.php`). |
+| `posted_taken_at()` | Date de prise déclarée (champ POST `taken_at`, millisecondes) : lue si elle correspond à `/^[0-9]{1,14}$/`, convertie en UTC. `null` si le champ est absent, mal formé ou plus de `TAKEN_SKEW_SECONDS` dans le futur. |
+| `taken_before_reveal($event, $taken)` | Vrai si la date tient dans la fenêtre de l'événement : au plus `TAKEN_SKEW_SECONDS` après la révélation et, si `starts_at` est renseigné, au plus `TAKEN_SKEW_SECONDS` avant le début. Sans date de début (anciens événements), seule la borne de la révélation s'applique. Faux si la date ou la révélation est absente. |
+| `require_upload_allowed($event, $taken)` | Contrôle d'état de `upload.php` : 410 `expired`, 403 `upcoming`, 403 `closed` si l'album est dévoilé et que `taken_before_reveal()` est faux. Rend `open` ou `closed`. |
+| `TAKEN_SKEW_SECONDS` | Constante, 900 : tolérance d'horloge des téléphones, commune aux trois bornes. |
 | `require_revealed($event)` | Bloque avec 403 `locked` tant que l'album n'est pas dévoilé. |
 | `require_not_expired($event)` | Bloque avec 410 `expired`. |
 | `guest_max_photos($event, $hasEmail)` | Limite de l'invité : celle de l'événement, plus 5 (`EMAIL_BONUS`) s'il a laissé son e-mail. `null` = illimité. |
@@ -691,6 +700,7 @@ erDiagram
     int bytes
     tinyint liked
     char client_id
+    datetime late_taken_at
     timestamp created_at
   }
   requests {
@@ -797,6 +807,7 @@ Le même prénom peut exister plusieurs fois dans un événement.
 | `bytes` | INT | Poids du fichier |
 | `liked` | TINYINT(1), défaut 0 | Coup de cœur des organisateurs |
 | `client_id` | CHAR(32) ascii, nul possible | Identifiant donné à la photo par le téléphone. Nul pour les photos reçues avant la migration 015 et pour celles d'une page chargée avant cette version. |
+| `late_taken_at` | DATETIME (UTC), nul possible ; `TEXT` en SQLite | Date de prise déclarée par le téléphone, renseignée seulement pour une photo reçue après la révélation ; nulle veut donc dire « arrivée avant la révélation ». C'est une déclaration du téléphone, bornée par le serveur, pas une preuve. Sert à expliquer l'acceptation de la photo et à compter les arrivées tardives pour les organisateurs (`album.php`). |
 | `created_at` | TIMESTAMP | Réception |
 
 Clé unique `photos_guest_client (guest_id, client_id)` : un même envoi reçu deux fois ne s'enregistre qu'une fois pour un invité. Plusieurs valeurs nulles sont admises par MySQL comme par SQLite, donc les photos sans identifiant ne se gênent pas. L'unicité est par invité : le renvoi d'une photo part avec le même jeton, donc le même invité.
@@ -879,6 +890,7 @@ Fichiers de [`../database/`](../database/), appliqués dans l'ordre de leur nom.
 | `015_photo_client_id.sql` | `photos.client_id` (CHAR(32), jeu de caractères `ascii`, comparaison `ascii_bin`, nul possible) et clé unique `photos_guest_client (guest_id, client_id)`. Une seule instruction `ALTER TABLE`. L'ancien `upload.php` nomme ses colonnes : la colonne en plus ne le gêne pas, donc la migration peut passer avant le déploiement. |
 | `016_mail_queue.sql` | Table `mail_queue`, avec sa clé unique, ses deux index et ses deux clés étrangères. `CREATE TABLE IF NOT EXISTS`, une seule instruction. L'ancien code ne la connaît pas : la migration peut passer avant le déploiement. |
 | `017_auto_delete.sql` | `events.delete_at` et `events.delete_warned_at` (DATETIME nuls, après `closes_at`). Une seule instruction `ALTER TABLE … ADD COLUMN` pour les deux. **Doit passer avant le déploiement** : le nouveau `admin-event-save.php` écrit `delete_at` à chaque enregistrement d'événement (voir [13.1](#131-procédure)). |
+| `018_photo_late.sql` | `photos.late_taken_at` (DATETIME nul, après `client_id`). Une seule instruction `ALTER TABLE … ADD COLUMN`. **Doit passer avant le déploiement** : le nouveau `upload.php` nomme la colonne dans son `INSERT` (voir [13.1](#131-procédure)). |
 
 Les migrations 002, 003 et 005 contiennent des données de démonstration. Sur une base neuve, elles créent un événement `DEMO2026` en production : le supprimer depuis l'administration s'il n'est pas voulu.
 
@@ -895,7 +907,7 @@ Les migrations 002, 003 et 005 contiennent des données de démonstration. Sur u
 | Index | Index sur `guests.event_id`, `photos.guest_id`, `photos.event_id`, `admin_login_attempts.failed_at` | Seulement les index uniques, celui de `admin_password_resets.created_at` et ceux de `mail_queue` (`mail_queue_guest`, `mail_queue_pending`) |
 | Données de départ | `DEMO2026` | `DEMO2026` (aujourd'hui, pas encore révélé) et `PASSE2026` (révélé) |
 
-Conséquence pratique : **toute migration MySQL doit être reportée à la main dans `local.sqlite.sql`**, sinon l'appli locale ne correspond plus à la production. `CREATE TABLE IF NOT EXISTS` ne modifie pas une table existante : pour une colonne ajoutée, la base locale déjà créée est mise à niveau par `scripts/local.sh`, qui lit le tableau `$added` (table, colonne, type) dans son bloc `php -r` et lance `ALTER TABLE … ADD COLUMN` pour chaque colonne absente (`PRAGMA table_info`). Cette mise à niveau passe **avant** l'exécution de `local.sqlite.sql`, sinon le `CREATE UNIQUE INDEX` de la colonne neuve échouerait sur une base ancienne et arrêterait le script. Pour `photos.client_id`, `local.sqlite.sql` porte `client_id TEXT NULL` dans la table et `CREATE UNIQUE INDEX IF NOT EXISTS photos_guest_client ON photos (guest_id, client_id)` après elle ; `$added` contient `["photos" => ["client_id" => "TEXT NULL"], "events" => ["delete_at" => "TEXT NULL", "delete_warned_at" => "TEXT NULL"]]` (la migration 017 est reportée de la même façon : colonnes dans `events` de `local.sqlite.sql`, entrée dans `$added`). Piège : le bloc `php -r '…'` est entouré d'apostrophes shell ; **aucune apostrophe n'y est permise, même en commentaire**. Une base neuve (aucune colonne présente) est ignorée par la mise à niveau : le fichier SQL crée tout. Pour repartir de zéro, supprimer `.local/dev.sqlite`.
+Conséquence pratique : **toute migration MySQL doit être reportée à la main dans `local.sqlite.sql`**, sinon l'appli locale ne correspond plus à la production. `CREATE TABLE IF NOT EXISTS` ne modifie pas une table existante : pour une colonne ajoutée, la base locale déjà créée est mise à niveau par `scripts/local.sh`, qui lit le tableau `$added` (table, colonne, type) dans son bloc `php -r` et lance `ALTER TABLE … ADD COLUMN` pour chaque colonne absente (`PRAGMA table_info`). Cette mise à niveau passe **avant** l'exécution de `local.sqlite.sql`, sinon le `CREATE UNIQUE INDEX` de la colonne neuve échouerait sur une base ancienne et arrêterait le script. Pour `photos.client_id`, `local.sqlite.sql` porte `client_id TEXT NULL` dans la table et `CREATE UNIQUE INDEX IF NOT EXISTS photos_guest_client ON photos (guest_id, client_id)` après elle ; `$added` contient `["photos" => ["client_id" => "TEXT NULL", "late_taken_at" => "TEXT NULL"], "events" => ["delete_at" => "TEXT NULL", "delete_warned_at" => "TEXT NULL"]]` (la migration 017 est reportée de la même façon : colonnes dans `events` de `local.sqlite.sql`, entrée dans `$added` ; la migration 018 aussi : `late_taken_at TEXT NULL` dans `photos`, entrée dans `$added`). Piège : le bloc `php -r '…'` est entouré d'apostrophes shell ; **aucune apostrophe n'y est permise, même en commentaire**. Une base neuve (aucune colonne présente) est ignorée par la mise à niveau : le fichier SQL crée tout. Pour repartir de zéro, supprimer `.local/dev.sqlite`.
 
 Le code PHP n'emploie que du SQL commun aux deux moteurs. Le seul test du moteur est dans `db()`, pour le `PRAGMA`.
 
@@ -1041,6 +1053,8 @@ Les messages d'ouverture, de révélation et de préavis ne partent pas à heure
 | `album.php` | Les organisateurs ouvrent leur album ; puis toutes les 30 secondes tant qu'il n'est pas dévoilé | 20, 8 |
 | `admin-events.php` | L'administrateur ouvre ou recharge la liste des événements | 20, 8 |
 | `cron.php` | La tâche planifiée | 500 messages, 600 secondes en ligne de commande ; 100 messages, 20 secondes par appel web |
+
+Aucun e-mail n'est ajouté ni modifié par l'évolution « photos prises avant la révélation » : une photo arrivée après la révélation ne déclenche aucun message, et l'e-mail de révélation n'est pas renvoyé (un invité dont toutes les photos arrivent tard ne l'a donc pas reçu : il n'avait aucune photo au moment de la mise en file).
 
 La page vitrine ne déclenche rien. Le délai est contrôlé avant chaque message : un message déjà commencé n'est pas interrompu, donc une visite peut dépasser un peu ses 8 secondes si `mail()` est lent.
 
@@ -1247,6 +1261,7 @@ Les limites d'envoi de PHP chez OVH (`upload_max_filesize`, `post_max_size`) ne 
 | Pas de limitation de débit hors administration | `join`, `upload` et `contact` n'ont pas de plafond par adresse. `contact` n'a qu'un champ piège. | Les limites par événement (photographes, photos par photographe) bornent les abus quand elles sont réglées. |
 | `cron.php` et `qr.php` publics | Appelables par tous | Sans effet nuisible : envoi de ce qui devait partir (borné à 100 messages et 20 secondes par appel web) ; image non secrète. Un appel web note aussi un passage : l'état affiché dans l'administration peut être faussé par un tiers, mais il signale alors « par un appel web ». |
 | Qui peut déclencher une suppression d'album | Trois chemins seulement : l'administrateur connecté (`admin-event-delete.php`, une suppression à la main, sans délai) ; la tâche planifiée lancée par l'hébergeur en ligne de commande (`run_retention()` refuse `PHP_SAPI !== 'cli'`) ; personne d'autre. Ni une visite, ni un appel web de `cron.php`, ni `retention.php` (interdit par `.htaccess` et sans effet à son chargement) ne suppriment quoi que ce soit. Une personne qui appelle `cron.php` par le web ne peut rien supprimer. | Le garde-fou ([8.5](#85-conservation-et-suppression-automatique)) ne supprime que sur preuve d'envoi et dans le doute s'abstient. |
+| Date de prise d'une photo | Elle est déclarée par le téléphone : le serveur la borne (début de l'événement quand il est renseigné, révélation, pas dans le futur, 15 minutes de tolérance, `TAKEN_SKEW_SECONDS`) mais ne peut pas la vérifier. Un invité inscrit avant la révélation peut donc ajouter à l'album, dans la limite de son quota et jusqu'à la clôture, une photo prise plus tard. Il pouvait déjà envoyer n'importe quelle photo de sa galerie pendant l'album ouvert ; il ne voit toujours que les siennes. Un événement sans date de début n'a que la borne de la révélation. | Risque ajouté faible, borné par le quota. Voir [15.1](#151-limites-de-fonctionnement). |
 | Pas de jeton anti-CSRF | L'administration repose sur le cookie `SameSite=Strict` | Suffisant pour les navigateurs actuels. |
 | Pas d'en-tête `Content-Security-Policy` | Non défini | Le site ne charge aucun script d'un autre domaine. |
 | Adresse IP du visiteur | La limitation des essais lit `REMOTE_ADDR`. Si l'hébergeur place un relais devant PHP, toutes les requêtes peuvent sembler venir de la même adresse. | À confirmer chez OVH. Le plafond global de 30 échecs couvre ce cas. |
@@ -1391,7 +1406,9 @@ Deux points à savoir :
 
 **Ce qui se passe au premier passage de la tâche après la mise en ligne.** Les albums clôturés depuis plus de cinq mois sont à moins de trente jours de leur échéance, voire échus : leur préavis est mis en file au premier passage et part dans la foulée. Un album déjà échu n'est pas supprimé ce jour-là : il l'est au plus tôt sept jours après l'envoi réel du préavis, à condition que ce préavis soit parti à l'administrateur (et aux organisateurs qui ont une adresse). Les administrateurs reçoivent donc un message par album concerné ; vérifier ensuite la liste des événements (ligne « Suppression des photos ») avant la première suppression. Pour garder un de ces albums, repousser sa clôture dans l'intervalle.
 
-**Invité avec la page ouverte pendant la mise en ligne.** Sa page déjà chargée continue de fonctionner avec l'ancien code : elle envoie les photos sans `client_id`, que le nouveau `upload.php` accepte comme avant (sans anti-doublon). Les photos en attente d'une page de la nouvelle version sont gardées sur le téléphone et reprises à la réouverture. Faire la mise en ligne hors d'un événement en cours reste préférable. Retour arrière : redéployer le commit précédent ; la colonne reste, sans effet.
+**Invité avec la page ouverte pendant la mise en ligne.** Sa page déjà chargée continue de fonctionner avec l'ancien code : elle envoie les photos sans `client_id`, que le nouveau `upload.php` accepte comme avant (sans anti-doublon). Les photos en attente d'une page de la nouvelle version sont gardées sur le téléphone et reprises à la réouverture. Avec la version des photos tardives : une page ancienne continue d'envoyer sans date de prise ; avant la révélation c'est accepté comme avant, après la révélation c'est refusé comme avant (403 `closed`), et ses photos repartent dès que l'invité recharge la page (la nouvelle version remet en file les fiches `closed` de l'ancienne). Faire la mise en ligne hors d'un événement en cours reste préférable. Retour arrière : redéployer le commit précédent ; la colonne reste, sans effet.
+
+**Cas de `018_photo_late.sql` (photos prises avant la révélation).** Elle ajoute `photos.late_taken_at`. **Elle passe avant le déploiement** : le nouveau `upload.php` nomme la colonne dans son `INSERT`, et sans elle tout envoi de photo échoue en 500, avant comme après la révélation. L'ordre n'est pas négociable. L'ancien code, lui, nomme ses colonnes et ignore celle-ci : la migration en avance ne le gêne pas. Retour arrière : redéployer le commit précédent ; la colonne reste, sans effet. Seul effet de bord : une page de la nouvelle version déjà chargée, avec des photos en attente après la révélation, recevrait de nouveau `closed` et les marquerait `late`, donc ne les renverrait plus ; elles restent 7 jours sur le téléphone, mais il faudrait vider `reason` à la main pour qu'elles repartent.
 
 **Exception : la toute première installation.** Le script de migration lit les accès MySQL dans le `api/config.php` présent sur le serveur. Sur un hébergement vide, il faut donc déployer une première fois, puis migrer.
 
@@ -1430,6 +1447,7 @@ Le script temporaire porte un nom aléatoire et il est supprimé même en cas d'
 | Page vitrine | S'affiche, la vidéo se lance |
 | `/admin/` | La connexion fonctionne, la liste des événements s'affiche |
 | Un événement de test | Création, « QR code et liens », ouverture du lien des invités sur un téléphone, une photo envoyée ; puis, pour l'envoi fiable : mode avion, 3 photos, fermeture de l'onglet, réouverture avec le réseau, les 3 photos partent |
+| Révélation (photos prises avant) | Sur un événement de test : 2 photos en mode avion, révélation avancée depuis l'administration, réseau rétabli. Les 2 photos arrivent, l'appareil photo disparaît, la page de l'album affiche la ligne des photos arrivées après la révélation |
 | Lien privé de l'album | Compteurs visibles, photos masquées avant la révélation |
 | `/api/lib.php` et `/api/config.php` dans un navigateur | Accès refusé (403) |
 | Adresse en `http://` | Redirigée vers `https://` |
@@ -1520,7 +1538,7 @@ Ils ne se lancent pas par une commande npm : ils sont joués par un agent, à tr
 | `mariage` | `scripts/e2e-mariage.js` | 11 étapes. L'administrateur crée un mariage ; les mariés ouvrent l'album avant la révélation ; un invité s'inscrit et prend 5 photos ; les mariés voient les compteurs mais pas les photos ; l'administrateur supprime la photo 2 ; il avance la révélation ; les mariés découvrent l'album et posent 3 coups de cœur ; l'administrateur les voit ; l'invité retrouve ses 4 photos dans l'ordre, en lecture seule, avec les coups de cœur. |
 | `mot-de-passe` | `scripts/e2e-mot-de-passe.js` | 10 étapes. Session ouverte avec le mot de passe actuel ; demande du lien ; contrôle de l'e-mail HTML ; ouverture du lien ; saisies refusées sans consommer le lien ; nouveau mot de passe ; ancien mot de passe et ancienne session refusés ; connexion avec le nouveau ; lien à usage unique et lien mal formé ; plafond de demandes. |
 | `types` | `scripts/e2e-types.js` | 7 étapes pour chacune des 4 natures d'événement. Création ; album avant la révélation ; page invité (accueil, prénom vide, inscription, une photo, « Mes photos ») ; QR code plein écran ; révélation avancée ; album après la révélation ; album vide après suppression de la photo. Vérifie que les textes s'adaptent à la nature. |
-| `reprise` | `scripts/e2e-reprise.js` | 10 étapes, titre d'événement « Test reprise E2E <6 chiffres> » (type « autre », limite de 8 photos). L'administrateur crée l'événement ; l'invité s'inscrit et envoie 1 photo en ligne (compteur 1, IndexedDB vide) ; réseau coupé, 3 photos gardées (« Réseau indisponible », « 4 / 8 photos », 3 fiches) ; page fermée, réseau rétabli, nouvelle page : pas d'écran « Connecté ! », « 3 photos retrouvées », envois dans l'ordre des `seq`, IndexedDB vide ; envoi coupé, 1 photo, rechargement, photo retrouvée et envoyée ; réponse perdue (`route.fetch()` puis `route.abort()`) : second envoi avec `duplicate: true` et le même `id`, pas de photo en double ; navigateur sans stockage (`indexedDB` neutralisé) : message « ne fermez pas cette page » puis envoi ; limite atteinte pendant une coupure ; depuis la page admin, renvoi d'un identifiant connu (200 `duplicate` malgré la limite atteinte) puis identifiant mal formé (400) ; album dévoilé avant l'envoi (lecture seule, message des photos non envoyées, aucun envoi après rechargement). |
+| `reprise` | `scripts/e2e-reprise.js` | 11 étapes (68 contrôles), titre d'événement « Test reprise E2E <6 chiffres> » (type « autre », limite de 8 photos). L'administrateur crée l'événement ; l'invité s'inscrit et envoie 1 photo en ligne (compteur 1, IndexedDB vide) ; réseau coupé, 3 photos gardées (« Réseau indisponible », « 4 / 8 photos », 3 fiches) ; page fermée, réseau rétabli, nouvelle page : pas d'écran « Connecté ! », « 3 photos retrouvées », envois dans l'ordre des `seq`, IndexedDB vide ; envoi coupé, 1 photo, rechargement, photo retrouvée et envoyée ; réponse perdue (`route.fetch()` puis `route.abort()`) : second envoi avec `duplicate: true` et le même `id`, pas de photo en double ; navigateur sans stockage (`indexedDB` neutralisé) : message « ne fermez pas cette page » puis envoi ; limite atteinte pendant une coupure ; depuis la page admin, renvoi d'un identifiant connu (200 `duplicate` malgré la limite atteinte) puis identifiant mal formé (400) ; album dévoilé avant l'envoi : l'étape 10 vérifie que les 2 photos en attente partent quand même (200, `state: "closed"`), qu'IndexedDB se vide, que l'appareil photo disparaît, que le bandeau « L'album a été dévoilé. Vous ne pouvez plus prendre de nouvelles photos ni en supprimer. » et le message « 2 photos prises avant la révélation ont rejoint l'album. » s'affichent, que la grille passe à 8 vignettes et que le rechargement n'envoie plus rien ; l'étape 11 injecte dans IndexedDB une fiche `failed / closed` telle que l'ancienne version la laissait (elle repart et est acceptée), puis, par envois directs depuis la page admin, vérifie qu'une photo prise il y a 2 h est acceptée, qu'une date dans le futur et une page sans date sont refusées (403 `closed`), et que le quota s'applique aux photos tardives (409 `limit`), sans photo ajoutée par les refus ni envoi en boucle au rechargement. |
 
 ### 14.3 Comment ils se jouent
 
@@ -1541,7 +1559,7 @@ Ils ne se lancent pas par une commande npm : ils sont joués par un agent, à tr
 | E-mails | Rien ne part en local (`mail_log` : `send_mail()` écrit un fichier et répond vrai). Le test `mot-de-passe` ouvre le fichier HTML écrit dans `.local/` et clique sur son bouton. |
 | Journal du test | Une ligne `N. Titre` par étape, puis `  ✓ texte` par contrôle réussi. `  ✗ texte` note un constat qui n'arrête pas le test. Un contrôle faux arrête le test et prend une capture d'écran de chaque page ouverte. |
 | Enregistrement du résultat | Le script s'exécute dans le serveur Playwright, sans accès aux fichiers. Il pose son résultat dans le `localStorage` d'une page du site, puis demande à Playwright d'écrire l'état du navigateur dans `.playwright-mcp/dernier-<test>.json`. `rapport.mjs` l'en extrait. |
-| Captures | Dans `.playwright-mcp/e2e/`. Le test `reprise` en prend six (étapes 3, 4, 6, 7, 8 et 10). |
+| Captures | Dans `.playwright-mcp/e2e/`. Le test `reprise` en prend sept (étapes 3, 4, 6, 7, 8, 10 et 11). |
 | Test `reprise` | Caméra factice injectée par `addInitScript` du contexte, pour qu'elle vaille aussi après une réouverture de page. Réseau coupé par `setOffline`. Envois ralentis, coupés ou rejoués par `route` (`route.fetch()` puis `route.abort()` pour perdre une réponse). Reprise sans attendre la minuterie : `dispatchEvent(new Event('online'))`. Le contenu d'IndexedDB (fiches et nombre d'octets) est lu depuis la page. Les envois directs partent de la page admin, parce que la `route` de la page invité les intercepterait. Les erreurs de console attendues (réseau coupé, 409, 403, 400) sont déclarées dans `expected` de `rapport.mjs`. |
 | Chemins | Les scripts contiennent le chemin absolu du projet (`/Volumes/Mac500/DEV/OuiSnap-1`). À adapter si le dépôt est déplacé. |
 
@@ -1566,6 +1584,7 @@ D'après les limites déclarées dans `rapport.mjs` et la lecture des scripts :
 - La page vitrine et le formulaire de demande.
 - Les limites (nombre de photographes, photos par photographe, bonus e-mail), le lien personnel `?t=`.
 - Pour la file d'envoi (couverte en partie par `reprise`), ce que Playwright ne peut pas simuler : un onglet tué ou gelé par le téléphone ; l'écran verrouillé et le maintien réel de l'écran allumé ; Safari sur iPhone et ses défauts de stockage ; la vraie navigation privée et un quota réellement plein (l'absence de stockage est imitée en neutralisant `indexedDB`) ; le navigateur intégré d'une autre application ; deux envois vraiment simultanés du même identifiant (`php -S` traite une requête à la fois) ; MySQL ; le délai maximal de 75 à 180 secondes.
+- Pour les photos prises avant la révélation (étapes 10 et 11 de `reprise`) : une horloge de téléphone mal réglée de plus de 15 minutes (Playwright ne décale pas l'horloge du navigateur de test ; seul un envoi direct avec une fausse date l'imite) ; la purge à 7 jours et la fenêtre réelle entre la prise et cette purge (il faudrait avancer le temps) ; le cas d'une page ouverte à l'instant exact de la révélation (approché par l'étape 10, pas identique) ; le refus d'une photo par le téléphone lui-même (fiche `late`, texte « n'ont pas pu rejoindre l'album ») : seuls les refus par envoi direct sont joués, la fiche `late` et son message ne le sont pas ; la ligne des photos tardives sur la page des organisateurs et le rang d'une photo tardive dans le ZIP.
 - La production : MySQL, Apache, `.htaccess`, HTTPS. Tout est joué sur SQLite et le serveur intégré de PHP.
 - Les scripts de mise en ligne et de migration.
 
@@ -1588,8 +1607,16 @@ Uniquement ce que le code ou le README d'origine confirment.
 | Très mauvais réseau : une photo de 3 Mo ne passe pas sous environ 160 kbit/s ; mise de côté après 5 essais, sans être supprimée | `upload-queue.ts` |
 | Une photo mise de côté puis envoyée plus tard arrive après les suivantes | `upload-queue.ts` |
 | Photo supprimée dans « Mes photos » alors que la réponse de son envoi s'était perdue : un renvoi la recrée (cas très rare) | `upload.php` |
-| Photos en attente quand l'album est dévoilé : non envoyées, gardées sur le téléphone avec un message. Choix par défaut, pas encore tranché par le propriétaire | `upload-queue.ts` |
-| Photos en attente gardées 7 jours sur le téléphone. Choix par défaut, pas encore tranché | `KEEP_MS` dans `upload-queue.ts` |
+| La date de prise déclarée par le téléphone n'est pas vérifiable : le serveur ne fait que la borner (15 minutes de tolérance) ; une photo prise jusqu'à 15 minutes après la révélation est acceptée | `lib.php` (`posted_taken_at`, `taken_before_reveal`) |
+| Sans date de début d'événement, seule la borne de la révélation s'applique | `taken_before_reveal()` |
+| Une photo refusée parce qu'elle n'est pas attestée prise avant la révélation n'est plus jamais renvoyée, même si l'administrateur repousse ensuite la révélation | `upload-queue.ts` (`reason: "late"`) |
+| Fenêtre réelle d'arrivée d'une photo tardive : 7 jours après la prise (`KEEP_MS`), alors que la clôture est à 14 jours du début par défaut ; avec une révélation le lendemain du début, environ 6 jours après la révélation | `KEEP_MS` dans `upload-queue.ts` |
+| Une photo arrivée après la révélation se range en fin de la liste de son photographe (ordre de réception), pas à son rang de prise de vue : dans « Mes photos », l'album et le ZIP | `photos.php`, `album.php`, `album-zip.php` |
+| Après la révélation l'invité ne peut pas supprimer pour libérer une place : une photo en attente au-delà du quota est refusée et effacée | `upload.php`, `upload-queue.ts` |
+| Les organisateurs ne voient une arrivée tardive qu'au prochain chargement de leur page (pas de rafraîchissement automatique après la révélation) et aucun e-mail ne les prévient | `album-app.tsx` |
+| Un invité dont toutes les photos arrivent après la révélation n'a pas reçu l'e-mail de révélation | `queue_due_reveal_mails()` |
+| Photos prises avant la révélation : non vérifié sur MySQL (colonne et `COUNT(*)` sont du SQL commun, mais tout est éprouvé sur SQLite) ni sur Safari | `upload.php`, `album.php` |
+| Photos en attente gardées 7 jours sur le téléphone, depuis la prise de vue. Valeur gardée par le propriétaire | `KEEP_MS` dans `upload-queue.ts` |
 | Un invité qui change de navigateur ou vide ses données perd sa session, sauf s'il a laissé son e-mail (lien personnel) | `guest-app.tsx`, `join.php` |
 | Un e-mail d'ouverture ou de révélation en échec est retenté (10 min, 30 min, 2 h, 6 h, 12 h), puis abandonné au sixième échec ; un message abandonné n'est jamais renvoyé, sauf à la main dans la base | `mail.php` (`MAIL_RETRY_DELAYS`) |
 | Nouveaux essais jamais éprouvés par un envoi réel ; `mail()` qui répond vrai ne garantit pas la remise | `mail.php` (`send_mail`) |

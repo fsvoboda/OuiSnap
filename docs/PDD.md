@@ -262,7 +262,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 **Objectif.** Photographier ou importer des photos, et les envoyer à l'album sans effort.
 **Déclencheur.** L'invité est connecté (P4).
 **Acteur.** Invité.
-**Préconditions.** Album ouvert.
+**Préconditions.** Album ouvert, ou dévoilé pour les photos déjà prises (RG-130).
 
 **Étapes**
 
@@ -274,7 +274,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 6. Le serveur contrôle la photo, l'enregistre, crée une vignette de 480 pixels et confirme la réception (upload.php). La photo est alors effacée du téléphone.
 7. À la dernière photo permise, et seulement quand plus aucune photo n'attend : « Vous avez envoyé vos N photos. Merci ! »
 8. Tant que des photos attendent, l'écran du téléphone reste allumé, si le téléphone le permet, pendant 3 minutes après le dernier progrès (ajout, photo reçue, reprise) (wake-lock.ts, upload-queue.ts).
-9. Si l'invité ferme la page ou perd le réseau avant la fin, les photos en attente restent sur son téléphone. Quand il rouvre la page (en scannant de nouveau le QR code ou par son lien personnel), il n'a rien à refaire : l'écran « Connecté ! » n'apparaît pas, l'écran indique « N photos retrouvées, envoi en cours… » et les photos repartent dans l'ordre.
+9. Si l'invité ferme la page ou perd le réseau avant la fin, les photos en attente restent sur son téléphone. Quand il rouvre la page (en scannant de nouveau le QR code ou par son lien personnel), il n'a rien à refaire : l'écran « Connecté ! » n'apparaît pas, l'écran indique « N photos retrouvées, envoi en cours… » et les photos repartent dans l'ordre. Cette reprise vaut aussi après la révélation, tant que l'album n'est pas clôturé (RG-93, RG-130).
 
 **Règles de gestion**
 
@@ -282,18 +282,20 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 - RG-29 : à l'import, si le lot dépasse la place restante, seules les premières photos sont prises : « Limite de N photos atteinte : X sur Y ajoutées. » (guest-app.tsx).
 - RG-30 : le serveur n'accepte que du JPEG, 15 Mo au plus, 8 000 pixels au plus sur chaque côté (upload.php).
 - RG-31 : le serveur revérifie la limite après l'enregistrement : si deux envois simultanés dépassent le plafond, le dernier est annulé (upload.php).
-- RG-32 : l'envoi n'est possible que tant que l'album est ouvert ; à la révélation, l'appli passe en lecture seule (guest-app.tsx, lib.php).
+- RG-32 : l'envoi de nouvelles photos n'est possible que tant que l'album est ouvert. Après la révélation, l'appareil photo n'est plus proposé, mais une photo prise avant la révélation peut encore rejoindre l'album (RG-130) (guest-app.tsx, lib.php).
 - RG-33 : les photos sont stockées hors du dossier public du site ; aucune adresse web n'y mène directement (lib.php).
-- RG-86 : photo gardée avant envoi. Chaque photo prise ou importée est enregistrée sur le téléphone avant de partir. Elle n'en est effacée qu'après la confirmation de réception par le serveur, ou après un refus qui ne changera pas (limite atteinte, fichier non valide, album clôturé) (upload-queue.ts, photo-store.ts).
+- RG-86 : photo gardée avant envoi. Chaque photo prise ou importée est enregistrée sur le téléphone avant de partir. Elle n'en est effacée qu'après la confirmation de réception par le serveur, ou après un refus qui ne changera pas (limite atteinte, fichier non valide, album clôturé). Une photo refusée parce qu'elle n'est pas attestée prise avant la révélation est gardée, mais plus jamais renvoyée (upload-queue.ts, photo-store.ts).
 - RG-87 : anti-doublon. Chaque photo reçoit un identifiant à la prise. Si le serveur connaît déjà cet identifiant pour cet invité, il répond comme au premier envoi, sans rien enregistrer. Ce contrôle passe avant ceux de l'album, du fichier et de la limite : une photo déjà reçue n'est jamais refusée ni comptée deux fois, même si la limite est atteinte ou l'album fermé entre-temps. Une page ouverte avant cette version n'envoie pas d'identifiant : la photo est acceptée comme avant. Un identifiant mal formé est refusé (upload.php).
 - RG-88 : les photos partent une à une, dans l'ordre de prise. Une photo mise de côté (RG-89) puis envoyée plus tard arrive après les suivantes (upload-queue.ts).
 - RG-89 : nombre d'essais. Un échec qui ne dit rien de la photo (délai dépassé, serveur en défaut, réponse qui ne vient pas de l'API, trop de demandes) compte pour un essai. Au 5e essai, la photo est mise de côté : elle reste sur le téléphone et la suivante part. Un réseau coupé ne compte pas pour un essai. Pendant une panne du serveur ou une connexion trop lente, prendre une nouvelle photo ne relance pas d'envoi et ne consomme donc pas d'essai : le prochain essai programmé suffit. Après un envoi réussi, les photos mises de côté repartent dans la même session, après celles qui attendent, avec 5 nouveaux essais. À la prochaine ouverture de la page, elles retentent aussi leur chance (upload-queue.ts : `MAX_ATTEMPTS`).
 - RG-90 : rythme de reprise. Après un échec, l'envoi reprend au bout de 6, 12, 24, 48 puis 60 secondes, et dès que l'un de ces événements se produit : retour du réseau, retour sur la page, nouvelle photo, ouverture de la page. Album pas encore ouvert : nouvel essai toutes les 60 secondes. Un envoi ne dure pas plus de 60 secondes plus 30 secondes par Mo de photo, 3 minutes au plus ; au-delà, il est interrompu et compte pour un essai. Si la page est restée masquée plus de 10 secondes, l'envoi en cours est relancé sans compter d'essai (upload-queue.ts : `RETRY_SECONDS`, `uploadTimeout`).
-- RG-91 : conservation sur le téléphone. Une photo qui n'est pas partie est gardée 7 jours, tous événements confondus, puis effacée à la prochaine ouverture de la page. Valeur actuelle, pas encore confirmée par le propriétaire (upload-queue.ts : `KEEP_MS`).
-- RG-92 : décompte de la limite. Le compteur est le nombre de photos reçues plus celui des photos en attente, borné à la limite ; l'invité ne peut pas prendre plus que la place restante. Si le serveur répond « limite atteinte », les photos en attente sont retirées de la file et le message l'indique (guest-app.tsx, upload-queue.ts).
-- RG-93 : révélation et clôture. Photos encore en attente quand l'album est dévoilé : elles ne sont pas envoyées, elles restent sur le téléphone et un message s'affiche sur « Mes photos ». Elles repartent si la révélation est repoussée et que l'album se rouvre. Comportement actuel, pas encore confirmé par le propriétaire. Album clôturé : les photos en attente sont effacées du téléphone et l'écran « clôturé » indique combien n'ont pas pu être envoyées. Code d'événement qui n'existe plus : elles sont effacées sans message (upload-queue.ts).
+- RG-91 : conservation sur le téléphone. Une photo qui n'est pas partie est gardée 7 jours, tous événements confondus, puis effacée à la prochaine ouverture de la page. Les 7 jours comptent depuis la date de prise, pas depuis la révélation : avec une révélation fixée au lendemain du début, la fenêtre utile après la révélation est d'environ six jours, alors que la clôture est à quatorze jours du début. Valeur actuelle, gardée par le propriétaire (upload-queue.ts : `KEEP_MS`).
+- RG-92 : décompte de la limite. Le compteur est le nombre de photos reçues plus celui des photos en attente, borné à la limite ; l'invité ne peut pas prendre plus que la place restante. Si le serveur répond « limite atteinte », les photos en attente sont retirées de la file et le message l'indique. Après la révélation il n'y a plus d'appareil photo, donc plus de compteur « N / max » : le nombre de photos reçues est celui de la grille « Mes photos », relue à chaque accusé de réception, et le nombre de photos en attente est dit par la ligne de statut. L'invité ne peut plus supprimer, donc ne peut plus libérer de place : une photo en attente qui dépasse la limite est refusée et effacée du téléphone (guest-app.tsx, upload-queue.ts).
+- RG-93 : révélation et clôture. À la révélation, l'invité ne peut plus prendre de nouvelles photos ni supprimer les siennes, mais les photos déjà prises et encore en attente partent vers l'album tant qu'il n'est pas clôturé (RG-130). « Mes photos » passe en lecture seule et dit où elles en sont (textes ci-dessous). Une photo que le serveur refuse parce qu'elle n'est pas attestée prise avant la révélation est gardée sur le téléphone sans être renvoyée, même si l'administrateur repousse ensuite la révélation. Les fiches qu'une version antérieure de l'application avait bloquées (« album dévoilé ») repartent à la première ouverture de la nouvelle version. Album clôturé : les photos en attente sont effacées du téléphone et l'écran « clôturé » indique combien n'ont pas pu être envoyées. Code d'événement qui n'existe plus : elles sont effacées sans message (upload-queue.ts).
 - RG-94 : écran maintenu allumé. Tant que des photos attendent et que l'envoi avance, l'application demande au téléphone de ne pas éteindre l'écran, sans effet si le téléphone refuse ou ne sait pas le faire (wake-lock.ts).
 - RG-95 : stockage indisponible. Si le téléphone ne peut pas garder les photos (navigateur sans stockage, stockage plein, opération sans réponse au bout de 8 secondes), elles restent en mémoire de la page : elles partent tant que la page est ouverte, et l'écran demande de ne pas la fermer. Le navigateur demande aussi confirmation avant de fermer la page tant que des photos attendent (photo-store.ts, upload-queue.ts, guest-app.tsx).
+- RG-130 : photo prise avant la révélation, envoyée après. Après la révélation et jusqu'à la clôture, le serveur accepte la photo d'un invité connu si le téléphone déclare une date de prise vraisemblable : postérieure au début de l'événement (borne appliquée seulement si l'événement a une date de début), antérieure à la révélation, jamais dans le futur, avec 15 minutes de tolérance d'horloge sur chaque borne. Sans date (page chargée avant cette version), avec une date mal formée ou hors de ces bornes, la photo est refusée (403 « closed ») : le comportement d'avant. La date déclarée n'est pas une preuve, c'est une déclaration du téléphone que le serveur borne : une photo réellement prise jusqu'à 15 minutes après la révélation est donc acceptée, et une personne qui avait déjà rejoint l'album avant la révélation peut y ajouter, dans la limite de son quota, une photo prise plus tard ; elle pouvait déjà envoyer n'importe quelle photo de sa galerie pendant que l'album était ouvert. La date déclarée des photos tardives est conservée (colonne `late_taken_at`). Les contrôles du fichier et du quota ne changent pas : le quota s'applique avant tout, y compris aux photos tardives. Une photo refusée pour sa date est gardée sur le téléphone (RG-86). Les photos prises avant la révélation partent dans l'ordre habituel ; une photo tardive arrive après les autres et se range à la fin de la liste de son photographe (lib.php : `posted_taken_at`, `taken_before_reveal`, `require_upload_allowed`, `TAKEN_SKEW_SECONDS` ; upload.php).
+- RG-131 : ce que voient les organisateurs. Quand au moins une photo est arrivée après la révélation, la page de l'album affiche sous les compteurs : « N photos prises pendant l'événement sont arrivées après la révélation. Si vous avez déjà téléchargé l'album, téléchargez-le de nouveau pour les avoir. » (« 1 photo prise pendant l'événement est arrivée après la révélation. Si vous avez déjà téléchargé l'album, téléchargez-le de nouveau pour l'avoir. » au singulier). Les compteurs (total, par photographe) et l'archive ZIP sont calculés à chaque demande : ils sont toujours à jour. Une photo tardive se range en fin du dossier de son photographe dans l'archive, donc la numérotation des photos déjà téléchargées ne bouge pas. Aucun e-mail n'est envoyé pour une arrivée tardive, et l'e-mail de révélation n'est pas renvoyé : un invité dont toutes les photos arrivent après la révélation ne l'a pas reçu (RG-42). La page de l'album ne se rafraîchit pas toute seule après la révélation : les organisateurs voient la ligne au prochain chargement (album.php, album-app.tsx).
 
 **Réseau instable**
 
@@ -305,12 +307,25 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 - Photo illisible à la relecture (image incomplète ou abîmée) : « 1 photo en attente était illisible et n'a pas pu être envoyée. » Elle est retirée.
 - Page fermée : rien ne part. Les photos en attente n'avancent que page ouverte ; elles repartent à la prochaine ouverture (étape 9).
 
+**Après la révélation** (« Mes photos » en lecture seule). La ligne de statut dit où en sont les photos prises avant la révélation (N photos, « 1 photo prise… est encore en attente » au singulier) :
+
+- Envoi en cours : « N photos prises avant la révélation partent vers l'album. Gardez cette page ouverte. » (stockage indisponible : « … Ne fermez pas cette page : ce navigateur ne les garde pas. »)
+- Réseau coupé : « N photos prises avant la révélation sont encore en attente. Elles partiront dès que la connexion reviendra. »
+- Connexion lente : « Connexion lente. N photos prises avant la révélation attendent encore : gardez cette page ouverte. »
+- Serveur en défaut : « Envoi momentanément impossible. N photos prises avant la révélation attendent encore, nouvel essai automatique. »
+- Photos mises de côté après 5 essais : « N photos n'ont pas pu être envoyées. Elles restent sur ce téléphone, nouvel essai à la prochaine ouverture. »
+- Photos refusées (date de prise non attestée) : « N photos n'ont pas pu rejoindre l'album : elles n'ont pas été prises avant la révélation. »
+- Photos arrivées : « N photos prises avant la révélation ont rejoint l'album. »
+
+Un message ponctuel (limite atteinte, par exemple) prend le pas sur cette ligne.
+
 **Exceptions**
 
 | Situation | Ce qui se passe |
 |---|---|
 | Limite atteinte (serveur) | Les photos en attente sont retirées. « Limite de N photos atteinte : X photos n'ont pas été envoyées. » |
-| Album dévoilé avant l'envoi | Les photos en attente restent sur le téléphone (RG-93). « Mes photos » passe en lecture seule et affiche : « N photos prises sur ce téléphone n'ont pas pu être envoyées avant que l'album soit dévoilé. » |
+| Album dévoilé avant l'envoi | Les photos déjà prises partent quand même ; « Mes photos » passe en lecture seule et dit où elles en sont (RG-93, RG-130). |
+| Photo non attestée prise avant la révélation | Refusée par le serveur, gardée sur le téléphone, sans nouvel essai. « N photos n'ont pas pu rejoindre l'album : elles n'ont pas été prises avant la révélation. » (RG-86, RG-130) |
 | Album clôturé | Les photos en attente sont effacées. L'écran « clôturé » ajoute : « N photos n'ont pas pu être envoyées : l'album est clôturé. » |
 | Album pas encore ouvert | Les photos restent en attente, nouvel essai toutes les 60 secondes. L'application interroge l'état de l'album au lieu de renvoyer la photo entière. |
 | Photo trop lourde | « Cette photo est trop lourde. » La photo est retirée, les suivantes partent. |
@@ -342,7 +357,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 **Règles de gestion**
 
 - RG-34 : un invité ne voit que ses propres photos (photos.php, photo.php).
-- RG-35 : la suppression n'est possible que tant que l'album est ouvert ; après la révélation, « Mes photos » devient en lecture seule avec le message « L'album a été dévoilé. Il n'est plus possible d'ajouter ou de supprimer des photos. » (delete.php, my-photos.tsx).
+- RG-35 : la suppression n'est possible que tant que l'album est ouvert ; après la révélation, « Mes photos » devient en lecture seule avec le bandeau « L'album a été dévoilé. Vous ne pouvez plus prendre de nouvelles photos ni en supprimer. » (delete.php, my-photos.tsx). La grille se met à jour quand des photos prises avant la révélation arrivent (RG-130).
 - RG-36 : après la révélation, l'invité voit un cœur sur ses photos marquées coup de cœur (my-photos.tsx).
 - RG-37 : album vide : « Aucune photo pour l'instant. » et, hors lecture seule, « Votre première photo apparaîtra ici. »
 - RG-38 : album clôturé : les photos ne sont plus servies (photos.php, photo.php).
@@ -386,7 +401,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 **Étapes**
 
-1. À l'heure de révélation, l'état de l'album devient « révélé » : les envois et les suppressions des invités sont refusés (RG-32, RG-35). Les photos encore en attente sur un téléphone ne sont pas envoyées (RG-93).
+1. À l'heure de révélation, l'état de l'album devient « révélé » : les envois et les suppressions des invités sont refusés (RG-32, RG-35). Les photos déjà prises et encore en attente sur un téléphone partent quand même, tant que l'album n'est pas clôturé (RG-93, RG-130).
 2. À la prochaine visite utile (page invité, page des organisateurs, administration) ou au prochain passage de la tâche planifiée, le système met en file les e-mails de révélation, une seule fois par album, puis les envoie (P12) : aux photographes concernés, puis aux organisateurs. Un message qui échoue est retenté (RG-107).
 3. Les organisateurs ouvrent leur lien : la page affiche l'album (P9).
 
@@ -398,7 +413,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 **Exception.** Si l'envoi d'un e-mail échoue, l'erreur est enregistrée dans le journal du serveur et le message est retenté plus tard, jusqu'à six essais (RG-107, RG-108, mail.php).
 
-**Résultat.** L'album est dévoilé, figé pour les invités, et tous sont prévenus.
+**Résultat.** L'album est dévoilé, fermé aux nouvelles photos, et tous sont prévenus. Les photos déjà prises mais pas encore parties rejoignent encore l'album (RG-130).
 
 ### P9. Découverte de l'album, coups de cœur et téléchargement
 
@@ -413,7 +428,8 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 2. Les photos sont rangées par invité (ordre alphabétique des prénoms), chacune dans sa section avec son nombre de photos, puis dans l'ordre de prise de vue.
 3. Les organisateurs touchent une photo : elle s'agrandit avec zoom, flèches précédente et suivante, et le rang « N sur total ». Un balayage vers la gauche ou la droite passe aussi à la photo suivante ou précédente, tant que la photo n'est pas zoomée. Un double appui, ou un double clic, ramène la photo à son zoom initial (photo-view.tsx).
 4. Le bouton cœur ajoute ou retire un coup de cœur (« Ajouter un coup de cœur » / « Retirer le coup de cœur ») ; le cœur s'affiche tout de suite et revient en arrière si le serveur refuse.
-5. « Tout télécharger » télécharge `album-<nom de l'album>.zip`. Il contient un dossier par photographe, avec des photos numérotées dans l'ordre de prise de vue (`001.jpg`, `002.jpg`…).
+5. « Tout télécharger » télécharge `album-<nom de l'album>.zip`. Il contient un dossier par photographe, avec des photos numérotées dans l'ordre de prise de vue (`001.jpg`, `002.jpg`…). Les photos arrivées après la révélation sont à la fin de leur dossier.
+6. Quand des photos sont arrivées après la révélation, une ligne sous les compteurs l'annonce et invite à télécharger de nouveau l'album (RG-131).
 
 **Règles de gestion**
 
@@ -718,7 +734,9 @@ Textes de la carte des organisateurs, par type (organizer-card.ts) :
 | Essais avant mise de côté d'une photo | 5 | upload-queue.ts |
 | Délai maximal d'un envoi | 60 s + 30 s par Mo, 180 s au plus | upload-queue.ts |
 | Délai maximal de la connexion de reprise (« join ») | 30 secondes | upload-queue.ts |
-| Photo en attente gardée sur le téléphone | 7 jours | upload-queue.ts |
+| Photo en attente gardée sur le téléphone | 7 jours, depuis la prise de vue | upload-queue.ts (`KEEP_MS`) |
+| Tolérance d'horloge sur la date de prise déclarée | 15 minutes | lib.php (`TAKEN_SKEW_SECONDS`) |
+| Fenêtre d'arrivée d'une photo prise avant la révélation | jusqu'à la clôture côté serveur, 7 jours après la prise côté téléphone | lib.php, upload-queue.ts (`KEEP_MS`) |
 | Écran maintenu allumé | 3 minutes après le dernier progrès | upload-queue.ts |
 | Page masquée avant relance de l'envoi en cours | plus de 10 secondes | upload-queue.ts |
 | Ouverture du stockage du téléphone | 3 secondes, puis repli en mémoire | photo-store.ts |
@@ -760,7 +778,7 @@ Quatre scénarios Playwright rejouent des parcours réels sur le serveur local e
 | mariage | création par l'admin, album des organisateurs, 5 photos d'un invité, suppression par l'admin, révélation, coups de cœur | 5 octobre 2026, réussi : 11 étapes, 41 contrôles |
 | mot-de-passe | demande de lien, e-mail, nouveau mot de passe, refus, plafond de demandes | 4 octobre 2026, réussi : 10 étapes, 28 contrôles |
 | types | un événement de chaque type, textes adaptés | 4 octobre 2026, réussi : 28 étapes, 102 contrôles |
-| reprise | photos gardées sur le téléphone quand le réseau tombe, reprise à la réouverture de la page, photo reçue dont la réponse s'est perdue (jamais en double), navigateur sans stockage, limite atteinte, album dévoilé avant l'envoi | 5 octobre 2026, réussi : 10 étapes, 52 contrôles |
+| reprise | photos gardées sur le téléphone quand le réseau tombe, reprise à la réouverture de la page, photo reçue dont la réponse s'est perdue (jamais en double), navigateur sans stockage, limite atteinte, album dévoilé avant l'envoi (les photos prises avant la révélation partent encore ; une fiche bloquée par l'ancienne version repart ; refus d'une date dans le futur et d'une page sans date ; le quota s'applique toujours) | 6 octobre 2026 : 11 étapes, 68 contrôles, réussi |
 
 Les résultats sont lus dans `.playwright-mcp/resultats.json`, un fichier local qui n'est pas versionné.
 
@@ -777,8 +795,9 @@ Ce qui n'existe pas encore ou qui n'est pas confirmé :
 - **Réponse à une demande de la vitrine** et création de l'événement : manuelles (P1, P2).
 - **Prévenir un invité** dont la photo est supprimée par l'administrateur : non prévu (RG-52).
 - **Sauvegardes** : seulement les instantanés de l'hébergeur (RG-58).
-- **Photos en attente à la révélation** : elles ne sont pas envoyées et restent sur le téléphone avec un message (RG-93). Choix par défaut, pas encore tranché par le propriétaire.
-- **Durée de conservation sur le téléphone** : 7 jours (RG-91). Choix par défaut, pas encore tranché.
+- **Photos en attente à la révélation** : elles partent encore jusqu'à la clôture (RG-130). La date de prise est déclarée par le téléphone, pas prouvée ; une photo refusée pour sa date n'est plus jamais renvoyée, même si la révélation est repoussée ensuite.
+- **Durée de conservation sur le téléphone** : 7 jours depuis la prise de vue (RG-91), gardée par le propriétaire. La fenêtre utile après une révélation fixée au lendemain du début est d'environ six jours, alors que la clôture est à quatorze jours du début ; l'application ne l'affiche pas, car la durée n'est vraie que si le téléphone coopère.
+- **Photos arrivées après la révélation** : la page des organisateurs ne se rafraîchit pas toute seule et aucun e-mail ne les prévient (RG-131). Un invité dont toutes les photos arrivent après la révélation ne reçoit pas l'e-mail de révélation (RG-42). Non éprouvé sur MySQL ni sur Safari.
 - **Page fermée** : rien ne part. L'invité doit rouvrir la page pour que ses photos en attente repartent (P5).
 - **Effacement par le téléphone** : le téléphone peut effacer le stockage de la page s'il manque de place, et Safari l'efface après 7 jours sans visite. Les photos en attente sont alors perdues.
 - **Navigation privée** : les photos en attente survivent à un rechargement de la page, pas à la fermeture de l'onglet, et l'application ne peut pas le détecter.

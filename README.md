@@ -35,7 +35,7 @@ stateDiagram-v2
 2. **À venir.** Avant la date de début, le QR code répond « L'album n'est pas encore ouvert » et indique le jour et l'heure d'ouverture.
 3. **Ouverture.** À la date de début, les invités peuvent photographier. Les organisateurs reçoivent un e-mail avec le QR code et le lien de leur album.
 4. **Prise de photos.** Les invités scannent, se présentent, photographient. Les organisateurs suivent les compteurs, mais ne voient aucune image.
-5. **Révélation.** À la date de révélation, les envois s'arrêtent et l'album se dévoile aux organisateurs. Les photographes qui ont laissé leur e-mail et envoyé au moins une photo sont prévenus.
+5. **Révélation.** À la date de révélation, l'album se dévoile aux organisateurs : les invités ne peuvent plus photographier ni supprimer, mais les photos qu'ils ont déjà prises et qui n'étaient pas parties rejoignent encore l'album jusqu'à la clôture. Les photographes qui ont laissé leur e-mail et envoyé au moins une photo sont prévenus.
 6. **Clôture.** Le jour de clôture passé, l'album n'est plus accessible, ni aux organisateurs ni aux invités. Les photos restent sur le serveur.
 7. **Suppression.** Six mois après la clôture au plus tard, l'album est supprimé automatiquement et ses photos sont effacées du serveur. Organisateurs et administrateur en sont prévenus par e-mail un mois avant (voir « Conservation des données »). Franck peut aussi supprimer un album à la main, à tout moment.
 
@@ -62,7 +62,11 @@ Un événement est un mariage, un baptême, un anniversaire ou un autre événem
 
 Une photo prise n'est plus perdue si l'invité ferme la page ou perd le réseau. Chaque photo est d'abord gardée sur son téléphone, puis envoyée à l'album une fois que la connexion le permet. Si le réseau tombe, l'écran indique combien de photos attendent et elles partent toutes seules au retour du réseau. Si l'invité ferme la page avant la fin, il retrouve ses photos en rouvrant la page (en scannant de nouveau le QR code ou par son lien personnel) : elles repartent sans qu'il ait rien à refaire. Une photo n'est jamais enregistrée deux fois, même si la connexion a coupé juste après son envoi. Pendant l'envoi, l'écran du téléphone reste allumé.
 
-Une limite reste vraie : page fermée, rien ne part. L'invité doit rouvrir la page pour que ses photos en attente repartent. Deux règles actuelles, pas encore confirmées : les photos encore en attente quand l'album est dévoilé ne sont pas envoyées (elles restent sur le téléphone, avec un message), et une photo qui n'est pas partie est gardée 7 jours sur le téléphone.
+Une limite reste vraie : page fermée, rien ne part. L'invité doit rouvrir la page pour que ses photos en attente repartent.
+
+Une photo prise avant la révélation rejoint encore l'album après, tant qu'il n'est pas clôturé : l'invité rouvre sa page et elle part toute seule. Après la révélation, il ne peut plus photographier ni supprimer, et sa page « Mes photos » lui dit où en sont ses photos. Une photo qui n'est pas partie est gardée 7 jours sur le téléphone : c'est la vraie limite de ce rattrapage, et elle court depuis la prise de vue, pas depuis la révélation. Quelques réserves : la date de prise vient du téléphone et n'est pas une preuve, le serveur vérifie seulement qu'elle est vraisemblable (avec un quart d'heure de tolérance) ; une photo refusée parce qu'elle n'a pas été prise avant la révélation n'est plus jamais renvoyée, même si la révélation est repoussée ensuite ; l'invité ne peut pas supprimer pour faire de la place, donc une photo qui dépasse sa limite est refusée.
+
+Pour les organisateurs, quand des photos arrivent après la révélation, leur page l'indique sous les compteurs et les invite à télécharger de nouveau l'album. Cette ligne apparaît au prochain chargement de leur page : elle ne se rafraîchit pas toute seule après la révélation, et aucun e-mail ne les prévient. Une photo arrivée tard se range à la fin des photos de son photographe.
 
 ### Un album surprise
 
@@ -149,7 +153,7 @@ Les mentions légales et la politique de confidentialité sont en ligne, liées 
 | Étape | État |
 |---|---|
 | Page vitrine (présentation, vidéo, formulaire de demande) | en ligne |
-| Parcours invité (QR code, « Connecté ! », appareil photo, import, envoi, « Mes photos » dans l'ordre de prise de vue) | en ligne, y compris l'envoi fiable des photos (gardées sur le téléphone, reprise à la réouverture, jamais en double), mis en ligne le 5 octobre 2026 ; à essayer sur de vrais téléphones |
+| Parcours invité (QR code, « Connecté ! », appareil photo, import, envoi, « Mes photos » dans l'ordre de prise de vue) | en ligne, y compris l'envoi fiable des photos (gardées sur le téléphone, reprise à la réouverture, jamais en double), mis en ligne le 5 octobre 2026 ; à essayer sur de vrais téléphones. Les photos prises avant la révélation rejoignent l'album après, jusqu'à la clôture : en ligne le 6 octobre 2026, vérifié sur le serveur local seulement (ni MySQL ni Safari) |
 | Album des organisateurs (compteurs, révélation, ZIP, coups de cœur) | en ligne |
 | Administration (événements, QR codes, PDF des tables, photos, coups de cœur visibles) | en ligne |
 | Cartes imprimables : une carte de table par type d'événement, carte des organisateurs, logo au centre du QR code | en ligne ; imprimées et essayées le 6 octobre 2026 : les QR codes se lisent sur papier |
