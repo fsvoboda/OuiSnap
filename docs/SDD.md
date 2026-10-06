@@ -1409,7 +1409,7 @@ Dans l'ordre :
 
 À faire une seule fois, à la main : rien dans le dépôt ni dans `npm run deploy` ne la crée. **Pas encore faite au 6 octobre 2026.**
 
-1. Espace client OVH, hébergement du site, onglet « Plus », puis « Planificateur de tâches » (« Ajouter une tâche »).
+1. Espace client OVH, hébergement du site, onglet « Plus », puis « Cron » (« Ajouter une tâche »).
 2. **Commande** : le dossier distant du site, suivi de `/api/cron.php`. Le dossier est la valeur de `OVH_REMOTE_DIR` dans `.env.deploy` (l'exemple de [`../deploy.env.example`](../deploy.env.example) est `ouisnap`, soit `ouisnap/api/cron.php`). Ne pas ouvrir `.env.deploy` dans un outil qui en recopie le contenu : seule cette valeur est utile.
 3. **Langage** : PHP, dans la version du site (8.1 au minimum, voir [3.1](#31-versions)).
 4. **Fréquence** : toutes les heures. L'alerte de l'administration se déclenche après deux heures sans passage.
