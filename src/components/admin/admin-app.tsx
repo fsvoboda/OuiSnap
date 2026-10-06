@@ -1,6 +1,6 @@
 "use client";
 
-import { Images, PencilSimple, Plus, QrCode, SignOut, Trash } from "@phosphor-icons/react";
+import { Images, Info, PencilSimple, Plus, QrCode, SignOut, Trash, Warning } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
 import { api, ApiError } from "@/lib/api";
@@ -40,12 +40,26 @@ function duration(seconds: number) {
 const CRON_WARNING =
   "Les e-mails d'ouverture et de révélation ne partent qu'à la visite du site.";
 
-// Passage de la tâche planifiée (attendue chaque heure) et e-mails restés en file.
+// Y a-t-il quelque chose qui demande l'attention de l'administrateur ? Dans ce cas la bulle
+// se signale au lieu de rester discrète : une alerte ne doit pas se cacher derrière un pictogramme.
+function statusAlerts(status: AdminStatus) {
+  return (
+    status.cronAge === null ||
+    status.cronAge > 2 * 3600 ||
+    status.mailsAbandoned > 0 ||
+    (status.cronAge !== null &&
+      (status.retentionAge === null ||
+        status.retentionAge === undefined ||
+        status.retentionAge > 2 * 3600))
+  );
+}
+
+// Passage de la tâche planifiée (attendue chaque heure), e-mails restés en file, suppressions.
 function MailStatus({ status }: { status: AdminStatus }) {
   const late = status.cronAge === null || status.cronAge > 2 * 3600;
   const plural = (count: number) => (count > 1 ? "s" : "");
   return (
-    <div role="status" className="flex flex-col gap-1 text-sm leading-relaxed text-brume">
+    <div className="flex flex-col gap-1 text-sm leading-relaxed text-brume">
       {status.cronAge === null ? (
         <p className="text-[#f0a39e]">Tâche planifiée : aucun passage enregistré. {CRON_WARNING}</p>
       ) : late ? (
@@ -89,6 +103,60 @@ function MailStatus({ status }: { status: AdminStatus }) {
         </p>
       )}
     </div>
+  );
+}
+
+// Bulle d'info à côté du titre : l'état tient en un pictogramme, le détail s'ouvre au clic
+// ou au toucher (le survol seul ne marcherait pas sur un téléphone).
+function StatusBubble({ status }: { status: AdminStatus }) {
+  const [open, setOpen] = useState(false);
+  const alert = statusAlerts(status);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (press: KeyboardEvent) => {
+      if (press.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [open]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((shown) => !shown)}
+        aria-expanded={open}
+        aria-label={
+          alert
+            ? "Service : quelque chose demande votre attention. Voir le détail"
+            : "Service : tout va bien. Voir le détail"
+        }
+        className={`grid size-9 place-items-center rounded-full border active:scale-95 ${
+          alert ? "border-[#f0a39e] text-[#f0a39e]" : "border-creme/30 text-brume"
+        }`}
+      >
+        {alert ? <Warning size={18} weight="bold" /> : <Info size={18} />}
+      </button>
+
+      {open && (
+        <>
+          {/* Toucher ailleurs referme la bulle. */}
+          <button
+            type="button"
+            aria-label="Fermer le détail"
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-10 cursor-default"
+          />
+          <div
+            role="status"
+            className="absolute left-0 top-full z-20 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-creme/20 bg-sapin-800 p-4 shadow-xl"
+          >
+            <MailStatus status={status} />
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -310,7 +378,10 @@ export function AdminApp() {
       {view.kind === "list" && (
         <main className="flex flex-col gap-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h1 className="font-serif text-4xl">Événements</h1>
+            <div className="relative flex items-center gap-3">
+              <h1 className="font-serif text-4xl">Événements</h1>
+              {status && <StatusBubble status={status} />}
+            </div>
             <button
               type="button"
               onClick={() => setView({ kind: "form", event: null })}
@@ -326,8 +397,6 @@ export function AdminApp() {
               {error}
             </p>
           )}
-
-          {status && <MailStatus status={status} />}
 
           {events.length === 0 && (
             <p className="py-10 text-center text-brume">
