@@ -1,6 +1,6 @@
 # OuiSnap : document de définition des processus (PDD)
 
-Version du 5 octobre 2026. Les valeurs chiffrées sont suivies du fichier du code où elles sont lues, entre parenthèses (chemins relatifs à `public/api/` pour les `.php`, à `src/` pour le reste).
+Version du 6 octobre 2026. Les valeurs chiffrées sont suivies du fichier du code où elles sont lues, entre parenthèses (chemins relatifs à `public/api/` pour les `.php`, à `src/` pour le reste).
 
 ## 1. Introduction
 
@@ -34,6 +34,8 @@ Du formulaire de demande de la vitrine jusqu'à la suppression d'un album, pour 
 | Bonus e-mail | Photos supplémentaires accordées à l'invité qui laisse son adresse. |
 | Carte de table | Carte A6 portant le QR code des invités, imprimée par quatre sur une page A4 et posée sur les tables. Son dessin dépend du type d'événement. |
 | Carte des organisateurs | Carte A5 en paysage, imprimée par deux sur une page A4, remise en main propre aux organisateurs. Son QR code ouvre l'album privé. |
+| File d'attente des e-mails | Liste des e-mails d'ouverture et de révélation à envoyer. Un message qui ne part pas y reste et est retenté (P12). |
+| Tâche planifiée | Programme que l'hébergeur lance toutes les heures pour envoyer les e-mails en attente, même sans visite du site (cron.php). Son dernier passage est visible dans l'administration. |
 | Photo en attente | Photo prise ou importée qui n'a pas encore été reçue par l'album. Elle est gardée sur le téléphone de l'invité jusqu'à ce que le serveur confirme sa réception. |
 | ZIP | Fichier unique contenant toutes les photos de l'album, un dossier par photographe. |
 
@@ -368,7 +370,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 - RG-40 : seuls les invités ayant envoyé au moins une photo figurent dans la liste ; ordre par nombre de photos décroissant puis par prénom (album.php).
 - RG-41 : une coupure réseau passagère garde l'affichage en place ; le prochain rafraîchissement réessaie (album-app.tsx).
 
-**Exceptions.** Lien non reconnu : « Ce lien d'album n'est pas valide. ». Album clôturé : « Cet album est clôturé : il n'est plus accessible. »
+**Exceptions.** Lien non reconnu : « Ce lien d'album n'est pas valide. ». Album clôturé : « Cet album est clôturé : il n'est plus accessible. » Événement sans date de révélation (anciens événements) : l'encadré affiche « La date de révélation de votre album n'est pas encore fixée. » à la place de la date et du compte à rebours (album-app.tsx).
 
 **Résultat.** Les organisateurs savent qui photographie et combien, sans voir d'image.
 
@@ -382,16 +384,16 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 **Étapes**
 
 1. À l'heure de révélation, l'état de l'album devient « révélé » : les envois et les suppressions des invités sont refusés (RG-32, RG-35). Les photos encore en attente sur un téléphone ne sont pas envoyées (RG-93).
-2. À la prochaine visite utile (page invité, page des organisateurs, administration) ou au prochain passage de la tâche planifiée, le système envoie les e-mails de révélation, une seule fois par album (P12) : d'abord aux photographes, puis aux organisateurs.
+2. À la prochaine visite utile (page invité, page des organisateurs, administration) ou au prochain passage de la tâche planifiée, le système met en file les e-mails de révélation, une seule fois par album, puis les envoie (P12) : aux photographes concernés, puis aux organisateurs. Un message qui échoue est retenté (RG-107).
 3. Les organisateurs ouvrent leur lien : la page affiche l'album (P9).
 
 **Règles de gestion**
 
 - RG-42 : seuls sont prévenus les invités qui ont laissé une adresse et envoyé au moins une photo (mail.php).
-- RG-43 : les e-mails de révélation partent une seule fois par album, même si l'administrateur modifie ensuite les dates (mail.php : réservation par `reveal_mail_sent_at`).
+- RG-43 : les e-mails de révélation sont mis en file une seule fois par album, même si l'administrateur modifie ensuite les dates (mail.php : réservation par `reveal_mail_sent_at`). Les messages de la file, eux, se règlent sur la date de révélation du moment (RG-110).
 - RG-44 : le message aux organisateurs indique le nombre de photos et de photographes, ou « aucune photo n'a été envoyée » (mail.php).
 
-**Exception.** Si l'envoi d'un e-mail échoue, l'erreur est enregistrée dans le journal du serveur et le message n'est pas renvoyé (mail.php).
+**Exception.** Si l'envoi d'un e-mail échoue, l'erreur est enregistrée dans le journal du serveur et le message est retenté plus tard, jusqu'à six essais (RG-107, RG-108, mail.php).
 
 **Résultat.** L'album est dévoilé, figé pour les invités, et tous sont prévenus.
 
@@ -486,29 +488,69 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 ### P12. E-mails
 
-**Objectif.** Informer chaque acteur au bon moment, sans intervention de l'administrateur.
-**Acteur.** Système.
+**Objectif.** Informer chaque acteur au bon moment, sans intervention de l'administrateur, et ne pas perdre un message parce qu'un envoi a échoué.
+**Acteur.** Système ; administrateur (il voit l'état, voir RG-114 à RG-116).
+**Déclencheur.** Pour M1, M5 et M6 : l'action de l'utilisateur. Pour M2 à M4 : l'heure d'ouverture ou de révélation de l'album, passée.
 
-| N° | Message (objet) | Destinataire | Déclencheur |
-|---|---|---|---|
-| M1 | « <album> » : bienvenue parmi les photographes | L'invité qui a laissé son e-mail | À son inscription (join.php). Lien « Continuer à photographier », QR code, mention du bonus. |
-| M2 | « <album> » : votre album est ouvert | E-mail des organisateurs | À l'ouverture de l'album, une fois (mail.php). QR code, bouton « Suivre mon album ». |
-| M3 | « <album> » : l'album est dévoilé | Invités ayant laissé un e-mail et envoyé au moins une photo | À la révélation, une fois (mail.php). Bouton « Revoir mes photos ». |
-| M4 | « <album> » : votre album est dévoilé | E-mail des organisateurs | À la révélation, une fois, après M3 (mail.php). Nombre de photos et de photographes, bouton « Découvrir mon album », jour de clôture. |
-| M5 | Demande OuiSnap : <nom> | Adresse d'expédition du service | À l'envoi du formulaire de la vitrine (contact.php). Réponse directe au visiteur. |
-| M6 | OuiSnap : réinitialisation du mot de passe d'administration | Adresses de l'administrateur | Clic sur « Mot de passe oublié ? » (admin-forgot.php). |
+| N° | Message (objet) | Destinataire | Déclencheur | File d'attente et nouveaux essais |
+|---|---|---|---|---|
+| M1 | « <album> » : bienvenue parmi les photographes | L'invité qui a laissé son e-mail | À son inscription (join.php). Lien « Continuer à photographier », QR code, mention du bonus. | Non : un essai, l'échec est noté dans le journal |
+| M2 | « <album> » : votre album est ouvert | E-mail des organisateurs | À l'ouverture de l'album, une fois (mail.php). QR code, bouton « Suivre mon album ». | Oui |
+| M3 | « <album> » : l'album est dévoilé | Invités ayant laissé un e-mail et envoyé au moins une photo | À la révélation, une fois par album, un message par invité (mail.php). Bouton « Revoir mes photos ». | Oui |
+| M4 | « <album> » : votre album est dévoilé | E-mail des organisateurs | À la révélation, une fois (mail.php). Nombre de photos et de photographes, bouton « Découvrir mon album », jour de clôture. | Oui |
+| M5 | Demande OuiSnap : <nom> | Adresse d'expédition du service | À l'envoi du formulaire de la vitrine (contact.php). Réponse directe au visiteur. | Non |
+| M6 | OuiSnap : réinitialisation du mot de passe d'administration | Adresses de l'administrateur | Clic sur « Mot de passe oublié ? » (admin-forgot.php). | Non : l'erreur s'affiche à l'écran |
+
+**Étapes pour M2, M3 et M4**
+
+1. L'heure d'ouverture (M2) ou de révélation (M3, M4) d'un album est passée.
+2. À la première visite utile (page invité, page des organisateurs, administration) ou au premier passage de la tâche planifiée, le système réserve l'album : il note que ses messages sont traités et met chaque message en file, tout ensemble ou rien (RG-105).
+3. Dans le même passage, le système envoie les messages de la file dont l'heure est venue (RG-113). Chaque message est reconstruit au moment de l'envoi, avec la situation du moment.
+4. Un message envoyé est marqué comme tel et ne repart plus (RG-111).
+5. Un message dont l'envoi échoue reste en file et sera retenté après un délai (RG-107).
+6. Au sixième échec, ou si le message n'a plus d'objet, il est abandonné (RG-108, RG-109). L'administrateur voit le décompte (RG-116).
+7. En parallèle, la tâche planifiée passe toutes les heures, vide la file et note son passage ; l'administration l'affiche (RG-114, RG-115).
 
 **Règles de gestion**
 
 - RG-59 : les messages partent de l'adresse d'expédition du service, en HTML aux couleurs de OuiSnap avec une version texte de secours (mail.php).
-- RG-60 : M2 et M3-M4 sont envoyés « à la première occasion » : à la première visite qui appelle l'API (page invité, page des organisateurs, liste de l'administration) après l'heure prévue, ou par la tâche planifiée `cron.php` (mail.php, cron.php). Sans visite et sans tâche planifiée, le message attend.
-- RG-61 : M2 n'est pas envoyé si l'album est déjà révélé à ce moment-là, ni s'il est à venir ou clôturé (mail.php).
-- RG-62 : chaque message de M2 à M4 n'est envoyé qu'une fois par album (réservation en base) (mail.php).
+- RG-60 : M2 à M4 sont mis en file et envoyés « à la première occasion » : à la première visite qui appelle l'API (page invité, page des organisateurs, liste de l'administration) après l'heure prévue, ou par la tâche planifiée `cron.php` (mail.php, cron.php). Sans visite et sans tâche planifiée, le message attend.
+- RG-61 : M2 n'est pas mis en file si l'album est déjà révélé à ce moment-là, ni s'il est à venir ou clôturé (mail.php).
+- RG-62 : les messages de M2 à M4 ne sont mis en file qu'une fois par album (réservation en base) ; une fois envoyés, ils ne repartent plus (RG-111) (mail.php).
 - RG-63 : les objets et les phrases d'accroche suivent le type d'événement (voir 5.1) (mail.php).
-- RG-64 : si un envoi échoue, l'erreur est notée dans le journal du serveur et le message n'est pas retenté, sauf M6 qui renvoie l'erreur à l'écran (mail.php, admin-forgot.php).
+- RG-64 : si l'envoi de M1 ou de M5 échoue, l'erreur est notée dans le journal du serveur et le message n'est pas retenté ; si celui de M6 échoue, l'erreur est renvoyée à l'écran. M2 à M4 suivent RG-107 (mail.php, join.php, contact.php, admin-forgot.php).
 - RG-65 : les e-mails d'invités contiennent un pied de page rappelant que l'adresse ne sert qu'à leur écrire à propos de l'album ; ceux des organisateurs, que leur adresse a été indiquée comme celle des organisateurs (mail.php).
+- RG-105 : mise en file. Quand l'heure est venue, le système réserve l'album et met en file ses messages dans une seule opération : si elle échoue, rien n'est réservé et un prochain passage recommence. M2 : un message aux organisateurs. M3 : un message par invité qui, à cet instant, a une adresse et au moins une photo. M4 : un message aux organisateurs. Les organisateurs ne reçoivent un message que si l'événement a une adresse d'organisateurs et une clé d'album. Un invité qui n'avait pas de photo à ce moment n'est pas ajouté ensuite (mail.php : `claim_event_mails`, `queue_due_open_mails`, `queue_due_reveal_mails`).
+- RG-106 : une seule mise en file par message : un même message (album, nature, destinataire) ne peut figurer qu'une fois dans la file (mail.php, 016_mail_queue.sql).
+- RG-107 : nouveaux essais. Un message est essayé au plus 6 fois : le premier essai tout de suite, puis après 10 minutes, 30 minutes, 2 heures, 6 heures et 12 heures, chaque délai étant compté depuis l'essai précédent. Le total est d'au moins 20 h 40 ; il est plus long en pratique, car un essai n'a lieu qu'à un passage (visite ou tâche planifiée, toutes les heures) (mail.php : `MAIL_RETRY_DELAYS`).
+- RG-108 : abandon après échec. Si le sixième essai échoue, le message est abandonné : il n'est plus jamais retenté et reste compté comme abandonné. L'erreur est notée dans le journal du serveur à chaque essai et à l'abandon (mail.php : `flush_mail_queue`).
+- RG-109 : message sans objet. Le message est abandonné, sans attendre les six essais, dans ces cas : album clôturé ; événement supprimé ; invité supprimé, sans adresse ou sans photo (M3) ; événement sans adresse d'organisateurs ni clé d'album (M2, M4) ; album déjà dévoilé au moment d'envoyer M2 ; nature de message inconnue (mail.php : `queued_mail`).
+- RG-110 : message trop tôt. Si, à l'essai, l'album n'est pas encore dévoilé (M3, M4, par exemple parce que l'administrateur a repoussé la révélation) ou pas encore ouvert (M2), le message n'est pas envoyé et l'essai compte quand même. Les délais de RG-107 s'appliquent : si la date est repoussée de plus d'une vingtaine d'heures (le temps des six essais), le message est abandonné (mail.php : `queued_mail`).
+- RG-111 : pas de doublon. Un message envoyé n'est jamais renvoyé, même si deux visites arrivent en même temps : l'essai est réservé avant l'envoi et une seule visite l'obtient. Une réserve : si le serveur s'arrête après l'envoi et avant son enregistrement, le message sera retenté et pourra arriver deux fois (mail.php : `flush_mail_queue`).
+- RG-112 : le message est reconstruit à chaque essai à partir de l'événement et de l'invité tels qu'ils sont à ce moment : adresse, nombre de photos et de photographes, date de clôture (mail.php : `queued_mail`).
+- RG-113 : bornes par passage, pour ne pas ralentir le site ni dépasser les limites de l'hébergeur : une visite envoie au plus 20 messages et travaille au plus 8 secondes ; la tâche lancée par l'hébergeur au plus 500 messages et 10 minutes ; la tâche appelée par une adresse web au plus 100 messages et 20 secondes. Le reste attend le passage suivant (mail.php : `send_due_mails`, cron.php).
+- RG-114 : état de la tâche planifiée. À chaque passage, `cron.php` note la date et son mode : lancée par l'hébergeur, ou par l'appel de son adresse web. L'administration affiche « Tâche planifiée : dernier passage il y a N minutes (ou heures, jours) », complété par « , par un appel web » quand c'est un appel web (cron.php, admin-app.tsx).
+- RG-115 : alerte. Si la tâche n'est jamais passée, l'administration affiche en rouge « Tâche planifiée : aucun passage enregistré. Les e-mails d'ouverture et de révélation ne partent qu'à la visite du site. » Si son dernier passage date de plus de deux heures : « Tâche planifiée : aucun passage depuis N heures. Les e-mails d'ouverture et de révélation ne partent qu'à la visite du site. » (« minutes » ou « jours » selon la durée) (admin-app.tsx : `MailStatus`).
+- RG-116 : décompte des e-mails. Sous l'état de la tâche, l'administration affiche, quand il y en a, « N e-mail(s) en attente de nouvel essai » (messages ni envoyés ni abandonnés, y compris ceux qui n'ont pas encore été essayés) et, en rouge, « N e-mail(s) abandonné(s) ». Le décompte des abandonnés ne revient pas à zéro : il ne baisse qu'à la suppression de l'événement concerné (admin-app.tsx, lib.php : `admin_status`).
 
-**Résultat.** Chaque acteur reçoit ce qui le concerne, une fois.
+**Exceptions**
+
+| Situation | Ce qui se passe |
+|---|---|
+| Échec d'envoi (hébergeur qui refuse, adresse d'expédition absente) | Le message reste en file et est retenté selon RG-107. Après six essais, il est abandonné et compté en rouge dans l'administration. |
+| Adresse absente ou retirée au moment de l'essai | Message abandonné sans autre essai (RG-109). |
+| Invité supprimé, ou sans photo | Message abandonné (RG-109). Un invité supprimé avec son événement emporte aussi ses messages en file. |
+| Date de révélation repoussée après la mise en file | Les messages M3 et M4 sont retenus, essai après essai, puis abandonnés si la nouvelle date est trop lointaine (RG-110). Ils ne sont pas remis en file à la nouvelle date : un message abandonné ne revient pas. |
+| Album clôturé avant l'envoi | Message abandonné (RG-109). |
+| Événement supprimé | Ses messages en file sont effacés avec lui. |
+| La file ne peut pas fonctionner (par exemple la base est occupée) | La page visitée s'affiche normalement ; l'erreur est notée dans le journal et le passage suivant recommence. |
+| Tâche lancée par l'hébergeur sans adresse du site configurée | Elle note son passage, n'envoie rien et s'arrête : les liens des messages seraient faux. L'erreur est dans le journal. |
+| Serveur arrêté entre l'envoi et son enregistrement | Le message peut partir deux fois (RG-111). |
+| E-mails des événements déjà traités avant la file | Un événement dont les messages avaient déjà été réservés avant la mise en place de la file n'est pas repris : ce qui avait échoué reste perdu. |
+
+**Limite.** `mail()` répond « vrai » quand l'hébergeur accepte le message, ce qui ne garantit pas qu'il arrive (courrier indésirable, adresse erronée, rejet plus loin). OuiSnap ne le détecte pas : un tel message est compté comme envoyé. Les nouveaux essais n'ont jamais été éprouvés par un envoi réel.
+
+**Résultat.** Chaque acteur reçoit ce qui le concerne, une fois, même si un premier envoi échoue.
 
 ### P13. Connexion de l'administrateur et mot de passe oublié
 
@@ -649,6 +691,13 @@ Textes de la carte des organisateurs, par type (organizer-card.ts) :
 | Cartouche du logo dans le QR code | 30 % de la largeur au plus, 5 modules de haut ; correction d'erreurs H, sinon Q, sinon M | card-kit.ts |
 | Corps du nom sur une carte | 88 px au départ (112 px pour le mariage), 56 px au plus petit sur une ligne, 36 px au plancher sur deux lignes | card-kit.ts |
 | Conservation après clôture | six mois au plus (engagement, suppression manuelle) | confidentialite/page.tsx |
+| Essais d'un e-mail d'ouverture ou de révélation | 6 au plus, puis abandon | mail.php |
+| Délai avant chaque essai | tout de suite, puis 10 min, 30 min, 2 h, 6 h, 12 h après l'essai précédent | mail.php (`MAIL_RETRY_DELAYS`) |
+| Borne d'une visite (envoi des e-mails) | 20 messages, 8 secondes | mail.php (`send_due_mails`) |
+| Borne de la tâche lancée par l'hébergeur | 500 messages, 600 secondes | cron.php |
+| Borne de la tâche appelée par adresse web | 100 messages, 20 secondes | cron.php |
+| Passage attendu de la tâche planifiée | toutes les heures | admin-app.tsx |
+| Alerte « aucun passage » | plus de 2 heures sans passage, ou jamais | admin-app.tsx |
 
 ### 5.4 Contrôle de bout en bout (Playwright)
 
@@ -670,10 +719,10 @@ Ce qui n'existe pas encore ou qui n'est pas confirmé :
 - **Paiement** : pas de paiement dans l'appli ; « à décider » (README précédent).
 - **Suppression automatique** des albums six mois après la clôture : engagement pris dans la politique de confidentialité, mais exécuté à la main (RG-55).
 - **Purge automatique** des demandes de la vitrine après trois ans : aucun mécanisme dans le code, à confirmer.
-- **Tâche planifiée** (`cron.php`) : prévue pour envoyer les e-mails sans visite du site ; sa mise en place sur l'hébergement est à confirmer. Sans elle, les e-mails d'ouverture et de révélation attendent la première visite utile (RG-60).
+- **Tâche planifiée** (`cron.php`) : à créer chez l'hébergeur (une fois par heure ; la marche à suivre est dans le SDD). Tant qu'elle n'est pas créée, ou qu'elle ne passe plus, l'administration l'écrit en rouge (RG-115) et les e-mails d'ouverture et de révélation attendent la première visite utile (RG-60).
+- **E-mails retentés, jamais éprouvés** : le nouvel essai des e-mails d'ouverture et de révélation (RG-107) a été vérifié sur une base de test et dans le navigateur en local, jamais par un envoi réel. La remise n'est pas garantie quand l'hébergeur accepte un message (voir P12). Un message abandonné n'est pas renvoyé et l'administration n'a pas de bouton pour le renvoyer à la main. Une fenêtre étroite de double envoi existe (RG-111).
 - **Réponse à une demande de la vitrine** et création de l'événement : manuelles (P1, P2).
 - **Prévenir un invité** dont la photo est supprimée par l'administrateur : non prévu (RG-52).
-- **Texte de la vitrine** : le texte de la vitrine annonce « le lendemain à midi » pour la révélation, alors que la date se règle événement par événement (P2).
 - **Sauvegardes** : seulement les instantanés de l'hébergeur (RG-58).
 - **Photos en attente à la révélation** : elles ne sont pas envoyées et restent sur le téléphone avec un message (RG-93). Choix par défaut, pas encore tranché par le propriétaire.
 - **Durée de conservation sur le téléphone** : 7 jours (RG-91). Choix par défaut, pas encore tranché.

@@ -87,7 +87,13 @@ Il voit tous les événements (état, dates, nombre de photographes, de photos e
 | Demande reçue | Le service (adresse d'expédition de OuiSnap) | À chaque demande envoyée depuis la vitrine. |
 | Mot de passe oublié | Les adresses de l'administrateur | Quand il clique sur « Mot de passe oublié ? ». |
 
-Ces messages partent une seule fois par album, à la première visite utile après l'heure prévue (page invité, album des organisateurs ou administration), ou par une tâche planifiée si elle est installée.
+Les messages d'ouverture et de révélation partent une seule fois par album, à la première visite utile après l'heure prévue (page invité, album des organisateurs ou administration), ou dès que la tâche planifiée de l'hébergeur passe, une fois par heure, même si personne ne visite le site.
+
+Un message qui ne part pas n'est pas perdu : il est retenté, d'abord dix minutes plus tard, puis à intervalles de plus en plus longs (jusqu'à douze heures), et abandonné après six essais, soit environ une journée. Un message devenu sans objet est abandonné aussitôt : album clôturé, invité supprimé ou sans photo, adresse retirée. Un message déjà parti ne repart jamais. Les messages de bienvenue, de mot de passe oublié et de demande reçue ne sont pas retentés.
+
+Dans l'administration, au-dessus de la liste des événements, Franck voit quand la tâche planifiée est passée pour la dernière fois, et le nombre d'e-mails en attente d'un nouvel essai ou abandonnés. Une alerte rouge s'affiche si la tâche n'est jamais passée ou pas depuis plus de deux heures : les messages ne partent alors qu'à la visite du site.
+
+Limite connue : quand l'hébergeur accepte d'envoyer un message, OuiSnap le considère comme envoyé. Il ne peut pas savoir si le message arrive vraiment (courrier indésirable, adresse erronée).
 
 ### QR code et cartes imprimables
 
@@ -133,10 +139,10 @@ La politique de confidentialité annonce la suppression des albums au plus tard 
 | Administration (événements, QR codes, PDF des tables, photos, coups de cœur visibles) | en ligne |
 | Cartes imprimables : une carte de table par type d'événement, carte des organisateurs, logo au centre du QR code | codées (octobre 2026) ; rendu jamais vérifié sur papier : les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés, mais rien n'a été imprimé. À imprimer et à essayer avec un vrai téléphone avant tout tirage |
 | Mot de passe oublié de l'administration | en ligne |
-| E-mails (bienvenue, ouverture, révélation, adaptés au type d'événement) | en ligne |
+| E-mails (bienvenue, ouverture, révélation, adaptés au type d'événement) | en ligne ; les e-mails d'ouverture et de révélation qui échouent sont retentés pendant environ une journée (octobre 2026). Ce nouvel essai n'a jamais été éprouvé par un envoi réel : il a été vérifié sur une base de test, pas sur la messagerie de l'hébergeur |
 | Mentions légales et politique de confidentialité | en ligne |
 | Tests de bout en bout Playwright (4 scénarios : mariage, mot de passe, types d'événement, reprise de l'envoi) | en place ; au dernier passage de chacun (4 et 5 octobre 2026), les quatre scénarios réussissent |
-| Tâche planifiée pour les e-mails sans visite du site | à confirmer (voir le SDD) |
+| Tâche planifiée pour les e-mails sans visite du site | à créer chez l'hébergeur (une fois par heure, la marche à suivre est dans le SDD) ; son état est visible dans l'administration, qui alerte tant qu'elle n'est pas passée |
 | Suppression des albums six mois après la clôture | à faire à la main, pas automatisée |
 | Paiement | à décider |
 

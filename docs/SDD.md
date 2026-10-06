@@ -4,8 +4,8 @@
 |---|---|
 | Projet | OuiSnap |
 | Document | Solution Design Document (conception technique) |
-| État du code décrit | branche `main`, envoi fiable des photos compris (mis en ligne le 5 octobre 2026) |
-| Rédigé le | 4 octobre 2026, mis à jour le 5 octobre 2026 |
+| État du code décrit | branche `main`, file d'attente des e-mails et état de la tâche planifiée compris (commit `3ffab4e`, mis en ligne le 6 octobre 2026) |
+| Rédigé le | 4 octobre 2026, mis à jour le 6 octobre 2026 |
 
 ## Sommaire
 
@@ -555,7 +555,7 @@ Les quatre passent par `current_album()` : 404 `album` si la clé est inconnue, 
 | `admin-logout.php` | Fermer la session | Public | aucune | `ok` | — |
 | `admin-forgot.php` | Envoyer le lien de réinitialisation | Public | aucune | `sentTo` (adresses masquées) | 503 `config`, 429 `locked`, 500 `mail` |
 | `admin-reset.php` | Vérifier le lien, ou choisir le nouveau mot de passe | Jeton du lien | `token` seul (vérification) ; ou `token`, `password`, `confirm` | `ok` | 410 `link`, 422 `invalid` |
-| `admin-events.php` | Lister les événements avec leurs compteurs | Session admin | aucune | `events` (voir `admin_event_payload()`) | — |
+| `admin-events.php` | Lister les événements avec leurs compteurs, et donner l'état de l'envoi des e-mails | Session admin | aucune | `events` (voir `admin_event_payload()`), `status` (voir ci-dessous) | — |
 | `admin-event-save.php` | Créer (sans `id`) ou modifier (avec `id`) un événement | Session admin | `id`, `title`, `kind`, `organizerName`, `organizerEmail`, `startsAt`, `revealAt`, `closesAt`, `maxGuests`, `maxPhotos` | `event` | 422 `invalid`, 404 `event` |
 | `admin-event-delete.php` | Supprimer un événement, ses invités, ses photos et son QR code | Session admin | `id` | `ok` | 404 `event`, 500 `server` (fichiers non supprimés : l'album est conservé) |
 | `admin-event-qr.php` | Déposer l'image du QR code d'un événement | Session admin | `id`, fichier `qr` (PNG, 512 Ko au plus) | `ok` | 404 `event`, 400 `upload`, 415 `format`, 500 `server` |
@@ -565,7 +565,17 @@ Les quatre passent par `current_album()` : 404 `album` si la clé est inconnue, 
 
 Règles de `admin-event-save.php` : nom de l'album obligatoire (120 caractères au plus) ; nature parmi `mariage`, `bapteme`, `anniversaire`, `autre` ; nom (80 caractères au plus) et e-mail des organisateurs obligatoires ; début et révélation obligatoires ; révélation après le début ; clôture, si elle est donnée, après la révélation ; limites entre 1 et 65 535, ou vides pour « illimité ». À la création, le serveur tire un code de 8 caractères (alphabet sans `O`, `0`, `I`, `1`) et une clé d'album de 48 caractères hexadécimaux.
 
-`admin-events.php` fait deux choses en plus de lister : il attribue une clé aux anciens albums qui n'en avaient pas en clair, et il déclenche l'envoi des e-mails en attente.
+`admin-events.php` fait trois choses en plus de lister : il attribue une clé aux anciens albums qui n'en avaient pas en clair, il déclenche l'envoi des e-mails en attente (`send_due_mails()`, avant la lecture de l'état), et il renvoie `status`, fabriqué par `admin_status()` (`lib.php`) :
+
+| Champ de `status` | Contenu |
+|---|---|
+| `cronLastRun` | Dernier passage de la tâche planifiée, au format ISO 8601 ; `null` si elle n'est jamais passée |
+| `cronAge` | Secondes écoulées depuis ce passage, à l'horloge du serveur ; `null` si jamais passée |
+| `cronMode` | `cli` (lancée par l'hébergeur) ou `web` (appel de l'adresse de `cron.php`) ; `null` si jamais passée |
+| `mailsPending` | Nombre de lignes de `mail_queue` ni envoyées ni abandonnées (y compris celles pas encore essayées) |
+| `mailsAbandoned` | Nombre de lignes abandonnées (ne baisse qu'à la suppression de l'événement) |
+
+Si la lecture échoue (table `mail_queue` absente, par exemple), `admin_status()` note l'erreur dans le journal et renvoie les valeurs lues jusque-là : la liste des événements s'affiche quand même. Le front (`MailStatus` dans `src/components/admin/admin-app.tsx`, type `AdminStatus` dans `types.ts`) affiche le bloc au-dessus de la liste ; il traite `status` comme facultatif.
 
 #### Autres
 
@@ -573,7 +583,7 @@ Règles de `admin-event-save.php` : nom de l'album obligatoire (120 caractères 
 |---|---|---|---|---|---|
 | `contact.php` | Enregistrer une demande de la vitrine et la transmettre par e-mail | Public | `name`, `email`, `kind`, `date` (facultative, `AAAA-MM-JJ`), `message` (facultatif, coupé à 2000 caractères), `site` (champ piège) | `ok` | 422 `invalid` |
 | `qr.php` | Image du QR code d'un événement, pour les e-mails | Public, `GET` | `c` dans l'adresse | Image PNG, en cache 24 h | 404 sans corps |
-| `cron.php` | Envoyer les e-mails en attente | Public, toute méthode | aucune | Réponse vide | — |
+| `cron.php` | Noter son passage, puis mettre en file et envoyer les e-mails en attente | Public, toute méthode | aucune | Réponse vide | — (voir [9.5](#95-tâche-planifiée)) |
 
 Si le champ piège `site` de `contact.php` est rempli, l'API répond `ok` sans rien enregistrer.
 
@@ -629,6 +639,8 @@ erDiagram
   events ||--o{ guests : "accueille"
   events ||--o{ photos : "contient"
   guests ||--o{ photos : "prend"
+  events ||--o{ mail_queue : "met en file"
+  guests ||--o{ mail_queue : "destinataire"
 
   events {
     int id PK
@@ -697,6 +709,18 @@ erDiagram
     datetime expires_at
     datetime used_at
   }
+  mail_queue {
+    int id PK
+    int event_id FK
+    varchar kind
+    int guest_id FK
+    int recipient
+    tinyint attempts
+    datetime last_attempt_at
+    datetime sent_at
+    datetime abandoned_at
+    datetime created_at
+  }
   waitlist {
     int id PK
     varchar email UK
@@ -708,7 +732,7 @@ erDiagram
   }
 ```
 
-Neuf tables en production : huit créées par les migrations, plus `migrations`, créée par `scripts/migrate.sh`. Toutes en InnoDB, `utf8mb4`.
+Dix tables en production : neuf créées par les migrations, plus `migrations`, créée par `scripts/migrate.sh`. La table `mail_queue` est décrite en 7.2. Toutes en InnoDB, `utf8mb4`.
 
 ### 7.2 Tables
 
@@ -725,9 +749,9 @@ Neuf tables en production : huit créées par les migrations, plus `migrations`,
 | `wedding_date` | DATE, nul possible | Ancienne date de l'événement. N'est plus écrite par l'administration ; sert seulement de repli pour la révélation. |
 | `starts_at` | DATETIME (UTC), nul possible | Début : pas d'envoi avant |
 | `closes_at` | DATETIME (UTC), nul possible | Clôture. Nul = jamais. |
-| `open_mail_sent_at` | DATETIME (UTC), nul possible | Envoi du message d'ouverture. Nul = pas encore traité. |
+| `open_mail_sent_at` | DATETIME (UTC), nul possible | Réservation du message d'ouverture : date à laquelle il a été mis en file. Nul = pas encore traité. L'envoi lui-même se lit dans `mail_queue`. |
 | `reveal_at` | DATETIME (UTC), nul possible | Révélation |
-| `reveal_mail_sent_at` | DATETIME (UTC), nul possible | Envoi des messages de révélation. Nul = pas encore traité. |
+| `reveal_mail_sent_at` | DATETIME (UTC), nul possible | Réservation des messages de révélation : date à laquelle ils ont été mis en file. Nul = pas encore traité. L'envoi lui-même se lit dans `mail_queue`. |
 | `max_guests` | SMALLINT, nul possible | Nombre maximum de photographes. Nul = illimité. |
 | `max_photos_per_guest` | SMALLINT, nul possible | Photos par photographe. Nul = illimité. |
 | `album_token_hash` | CHAR(64), unique, nul possible | SHA-256 de la clé d'album |
@@ -770,7 +794,15 @@ Clé unique `photos_guest_client (guest_id, client_id)` : un même envoi reçu d
 
 #### `settings` — réglages modifiables depuis l'appli
 
-`name` (clé primaire), `value`, `updated_at`. Une seule ligne est utilisée aujourd'hui : `admin_password_hash`, l'empreinte du mot de passe choisi par « Mot de passe oublié ? ».
+`name` (clé primaire), `value`, `updated_at`. Trois lignes sont utilisées aujourd'hui :
+
+| `name` | `value` | Écrite par |
+|---|---|---|
+| `admin_password_hash` | Empreinte du mot de passe choisi par « Mot de passe oublié ? » | `admin-reset.php` |
+| `cron_last_run` | Date UTC (`AAAA-MM-JJ HH:MM:SS`) du dernier passage de la tâche planifiée | `cron.php`, par `save_setting()` |
+| `cron_last_mode` | `cli` ou `web` : qui a lancé ce passage | `cron.php`, par `save_setting()` |
+
+`save_setting($name, $value)` (`lib.php`) fait un `UPDATE`, puis un `INSERT` si aucune ligne n'a été modifiée (réglage absent, ou déjà à cette valeur : MySQL ne compte que les lignes changées). Un `INSERT` refusé pour doublon (SQLSTATE `23000`, course avec un autre passage) est ignoré ; toute autre erreur remonte.
 
 #### `admin_login_attempts` — essais de connexion ratés
 
@@ -779,6 +811,25 @@ Clé unique `photos_guest_client (guest_id, client_id)` : un même envoi reçu d
 #### `admin_password_resets` — liens de réinitialisation
 
 `id`, `token_hash` (SHA-256 du jeton, unique), `ip`, `created_at` (indexé), `expires_at`, `used_at` (nul = lien encore utilisable). Les lignes de plus de 24 heures sont effacées à chaque nouvelle demande.
+
+#### `mail_queue` — file d'attente des e-mails d'ouverture et de révélation
+
+Une ligne par message à envoyer. Le corps n'est pas gardé : il est reconstruit à chaque essai.
+
+| Colonne | Type | Rôle |
+|---|---|---|
+| `id` | INT, clé primaire | Identifiant ; l'ordre des `id` est l'ordre d'envoi |
+| `event_id` | INT, clé étrangère vers `events`, cascade | Événement |
+| `kind` | VARCHAR(20) | `open_organizer`, `reveal_guest` ou `reveal_organizer` |
+| `guest_id` | INT, nul possible, clé étrangère vers `guests`, cascade | Invité destinataire ; nul pour les organisateurs |
+| `recipient` | INT, défaut 0 | `guest_id`, ou 0 pour les organisateurs. Sert à l'unicité : MySQL admet plusieurs `NULL` dans une clé unique, donc `guest_id` seul ne l'assurerait pas pour les organisateurs. |
+| `attempts` | TINYINT, défaut 0 | Essais déjà faits (réservés avant l'envoi) |
+| `last_attempt_at` | DATETIME (UTC), nul possible | Date du dernier essai |
+| `sent_at` | DATETIME (UTC), nul possible | Envoi réussi |
+| `abandoned_at` | DATETIME (UTC), nul possible | Abandon : essais épuisés, ou message devenu sans objet |
+| `created_at` | DATETIME (UTC) | Mise en file |
+
+Un message est « en attente » tant que `sent_at` et `abandoned_at` sont nuls. Clé unique `mail_queue_message (event_id, kind, recipient)` : un même message ne peut être mis en file qu'une fois. Index `mail_queue_guest (guest_id)` et `mail_queue_pending (sent_at, abandoned_at)`. Les lignes disparaissent avec l'événement ou l'invité (cascade) ; aucune purge automatique sinon.
 
 #### `waitlist` — ancienne liste d'attente
 
@@ -809,6 +860,7 @@ Fichiers de [`../database/`](../database/), appliqués dans l'ordre de leur nom.
 | `013_requests.sql` | Table `requests` |
 | `014_password_reset.sql` | Tables `settings` et `admin_password_resets` |
 | `015_photo_client_id.sql` | `photos.client_id` (CHAR(32), jeu de caractères `ascii`, comparaison `ascii_bin`, nul possible) et clé unique `photos_guest_client (guest_id, client_id)`. Une seule instruction `ALTER TABLE`. L'ancien `upload.php` nomme ses colonnes : la colonne en plus ne le gêne pas, donc la migration peut passer avant le déploiement. |
+| `016_mail_queue.sql` | Table `mail_queue`, avec sa clé unique, ses deux index et ses deux clés étrangères. `CREATE TABLE IF NOT EXISTS`, une seule instruction. L'ancien code ne la connaît pas : la migration peut passer avant le déploiement. |
 
 Les migrations 002, 003 et 005 contiennent des données de démonstration. Sur une base neuve, elles créent un événement `DEMO2026` en production : le supprimer depuis l'administration s'il n'est pas voulu.
 
@@ -822,7 +874,7 @@ Les migrations 002, 003 et 005 contiennent des données de démonstration. Sur u
 | Types | `VARCHAR`, `DATETIME`, `SMALLINT`… | `TEXT` et `INTEGER` ; aucune longueur imposée par la base |
 | Clés étrangères | Toujours actives | Activées par `PRAGMA foreign_keys = ON` à chaque connexion (`db()`) |
 | Tables absentes | — | `waitlist`, `migrations` |
-| Index | Index sur `guests.event_id`, `photos.guest_id`, `photos.event_id`, `admin_login_attempts.failed_at` | Seulement les index uniques et celui de `admin_password_resets.created_at` |
+| Index | Index sur `guests.event_id`, `photos.guest_id`, `photos.event_id`, `admin_login_attempts.failed_at` | Seulement les index uniques, celui de `admin_password_resets.created_at` et ceux de `mail_queue` (`mail_queue_guest`, `mail_queue_pending`) |
 | Données de départ | `DEMO2026` | `DEMO2026` (aujourd'hui, pas encore révélé) et `PASSE2026` (révélé) |
 
 Conséquence pratique : **toute migration MySQL doit être reportée à la main dans `local.sqlite.sql`**, sinon l'appli locale ne correspond plus à la production. `CREATE TABLE IF NOT EXISTS` ne modifie pas une table existante : pour une colonne ajoutée, la base locale déjà créée est mise à niveau par `scripts/local.sh`, qui lit le tableau `$added` (table, colonne, type) dans son bloc `php -r` et lance `ALTER TABLE … ADD COLUMN` pour chaque colonne absente (`PRAGMA table_info`). Cette mise à niveau passe **avant** l'exécution de `local.sqlite.sql`, sinon le `CREATE UNIQUE INDEX` de la colonne neuve échouerait sur une base ancienne et arrêterait le script. Pour `photos.client_id`, `local.sqlite.sql` porte `client_id TEXT NULL` dans la table et `CREATE UNIQUE INDEX IF NOT EXISTS photos_guest_client ON photos (guest_id, client_id)` après elle ; `$added` contient `["photos" => ["client_id" => "TEXT NULL"]]`. Piège : le bloc `php -r '…'` est entouré d'apostrophes shell ; **aucune apostrophe n'y est permise, même en commentaire**. Une base neuve (aucune colonne présente) est ignorée par la mise à niveau : le fichier SQL crée tout. Pour repartir de zéro, supprimer `.local/dev.sqlite`.
@@ -900,38 +952,105 @@ Chaque message est un tableau PHP : `subject`, `label`, `heading`, `paragraphs`,
 
 ### 9.3 Messages et déclencheurs
 
-| Message | Fonction | Destinataire | Déclencheur |
-|---|---|---|---|
-| Bienvenue | `welcome_mail()` | L'invité qui a laissé son e-mail | `join.php`, aussitôt après l'inscription |
-| Ouverture de l'album | `organizer_open_mail()` | Les organisateurs | `send_due_open_mails()` : dès que le début est passé |
-| Album dévoilé (invités) | `reveal_mail()` | Les invités avec e-mail **et** au moins une photo | `send_due_reveal_mails()` : dès que la révélation est passée |
-| Album dévoilé (organisateurs) | `organizer_reveal_mail()` | Les organisateurs | `send_due_reveal_mails()`, après les invités |
-| Demande reçue | tableau dans `contact.php` | L'adresse `mail_from` ; la réponse va à l'auteur de la demande | `contact.php` |
-| Réinitialisation du mot de passe | `admin_reset_mail()` | Chaque adresse de `admin_emails` | `admin-forgot.php` |
+| Message | Fonction | Destinataire | Déclencheur | File |
+|---|---|---|---|---|
+| Bienvenue | `welcome_mail()` | L'invité qui a laissé son e-mail | `join.php`, aussitôt après l'inscription | Non |
+| Ouverture de l'album | `organizer_open_mail()` | Les organisateurs | `queue_due_open_mails()` : dès que le début est passé | Oui, `open_organizer` |
+| Album dévoilé (invités) | `reveal_mail()` | Les invités avec e-mail **et** au moins une photo | `queue_due_reveal_mails()` : dès que la révélation est passée | Oui, `reveal_guest` |
+| Album dévoilé (organisateurs) | `organizer_reveal_mail()` | Les organisateurs | `queue_due_reveal_mails()` : dès que la révélation est passée | Oui, `reveal_organizer` |
+| Demande reçue | tableau dans `contact.php` | L'adresse `mail_from` ; la réponse va à l'auteur de la demande | `contact.php` | Non |
+| Réinitialisation du mot de passe | `admin_reset_mail()` | Chaque adresse de `admin_emails` | `admin-forgot.php` | Non |
 
-Les messages d'ouverture et de révélation ne partent pas à heure fixe. `send_due_mails()` cherche les albums à traiter, et elle est appelée par quatre scripts :
+Les messages d'ouverture et de révélation ne partent pas à heure fixe. Ils sont mis en file puis envoyés par `send_due_mails($limit, $seconds)`, appelée par quatre scripts :
 
-| Appelant | Quand |
+| Appelant | Quand | Bornes (`$limit`, `$seconds`) |
+|---|---|---|
+| `join.php` | Un invité ouvre l'appli (ou la page `/qr/`) avec un code valide | 20 messages, 8 secondes (valeurs par défaut) |
+| `album.php` | Les organisateurs ouvrent leur album ; puis toutes les 30 secondes tant qu'il n'est pas dévoilé | 20, 8 |
+| `admin-events.php` | L'administrateur ouvre ou recharge la liste des événements | 20, 8 |
+| `cron.php` | La tâche planifiée | 500 messages, 600 secondes en ligne de commande ; 100 messages, 20 secondes par appel web |
+
+La page vitrine ne déclenche rien. Le délai est contrôlé avant chaque message : un message déjà commencé n'est pas interrompu, donc une visite peut dépasser un peu ses 8 secondes si `mail()` est lent.
+
+Le QR code n'apparaît dans un e-mail que si son image est sur le serveur. L'administration la dépose juste après la création de l'événement, et rattrape les événements qui n'en ont pas à chaque affichage de la liste.
+
+### 9.4 File d'attente des e-mails
+
+Depuis le commit `3ffab4e`, les messages d'ouverture et de révélation passent par la table `mail_queue` ([7.2](#72-tables)). Avant, la date était écrite avant l'envoi et un échec perdait le message. Les anciennes fonctions `send_due_open_mails()` et `send_due_reveal_mails()` n'existent plus : elles sont remplacées par `queue_due_open_mails()` et `queue_due_reveal_mails()` (mise en file) et `flush_mail_queue()` (envoi). Le message de bienvenue, le mot de passe oublié et le formulaire de contact n'y passent pas.
+
+```mermaid
+flowchart TD
+  A["send_due_mails()"] --> B["queue_due_open_mails()<br/>queue_due_reveal_mails()"]
+  B -- "claim_event_mails : transaction<br/>réservation + mise en file" --> Q[("mail_queue")]
+  A --> F["flush_mail_queue($limit, $seconds)"]
+  Q --> F
+  F -- "réserve l'essai" --> R{"queued_mail()"}
+  R -- "send" --> M["send_mail()"]
+  R -- "retry : trop tôt" --> W["reste en file"]
+  R -- "abandon : sans objet" --> X["abandoned_at"]
+  M -- "vrai" --> S["sent_at"]
+  M -- "faux" --> W
+  W -- "6e essai échoué" --> X
+```
+
+**Mise en file** (`mail.php`).
+
+- `claim_event_mails($event, $colonne, $mise_en_file)` : ouvre une transaction, écrit la date dans `open_mail_sent_at` ou `reveal_mail_sent_at` par `UPDATE … WHERE id = ? AND colonne IS NULL`, et si une ligne a changé exécute la mise en file avant de valider. Sinon (une autre visite a déjà réservé) elle annule. Réservation et mise en file sont donc enregistrées ensemble, ou pas du tout.
+- Messages aux organisateurs : `queue_organizer_mail()` fait un `INSERT … SELECT … WHERE NOT EXISTS` ; en plus, la clé unique interdit le doublon.
+- Messages aux invités : un `INSERT … SELECT` sur `guests` pour ceux qui ont une adresse et au moins une photo, avec le même `NOT EXISTS`.
+- Ouverture : pas de message si l'événement n'a pas d'e-mail d'organisateurs ni de clé d'album (la requête les exclut), si l'album est à venir ou clôturé (ignoré), ni s'il est déjà dévoilé (la date est réservée sans rien mettre en file).
+- Révélation : message aux organisateurs seulement s'ils ont une adresse et une clé d'album.
+
+**Envoi** (`flush_mail_queue`).
+
+1. Sélection, par ordre d'`id`, de au plus `$limit` lignes ni envoyées ni abandonnées et « dues » : jamais essayées (`attempts = 0`), ou dont le dernier essai est assez ancien pour leur rang (tableau ci-dessous). Les lignes ayant atteint le maximum d'essais sans abandon noté (requête coupée en plein envoi) sont reprises pour être closes.
+2. Avant chaque message, contrôle du temps écoulé : au-delà de `$seconds`, la boucle s'arrête.
+3. **Réservation de l'essai** : `UPDATE mail_queue SET attempts = attempts + 1, last_attempt_at = ? WHERE id = ? AND attempts = <valeur lue> AND sent_at IS NULL AND abandoned_at IS NULL`. Seule la requête qui change la ligne envoie ; l'autre passe au message suivant. C'est la garantie contre l'envoi simultané en double.
+4. `queued_mail($ligne)` reconstruit le message à partir de l'événement et de l'invité d'aujourd'hui et répond `send` (adresse, message), `retry` (trop tôt) ou `abandon` (sans objet).
+5. `send` : `send_mail()` ; si elle répond vrai, `sent_at` est écrit. Sinon l'échec est noté dans le journal.
+6. `abandon` : `abandoned_at` est écrit (`abandon_queued_mail()`), avec la raison dans le journal.
+7. Si l'essai a échoué (envoi faux, ou `retry`) et que c'est le dernier permis, le message est abandonné.
+
+| Essais déjà faits | Attente avant le suivant, depuis `last_attempt_at` |
 |---|---|
-| `join.php` | Un invité ouvre l'appli (ou la page `/qr/`) avec un code valide |
-| `album.php` | Les organisateurs ouvrent leur album ; puis toutes les 30 secondes tant qu'il n'est pas dévoilé |
-| `admin-events.php` | L'administrateur ouvre ou recharge la liste des événements |
-| `cron.php` | La tâche planifiée |
+| 0 | aucune : tout de suite |
+| 1 | 10 minutes (600 s) |
+| 2 | 30 minutes (1 800 s) |
+| 3 | 2 heures (7 200 s) |
+| 4 | 6 heures (21 600 s) |
+| 5 | 12 heures (43 200 s) |
+| 6 | plus d'essai : abandon au sixième échec |
 
-La page vitrine ne déclenche rien.
+Les délais sont dans `MAIL_RETRY_DELAYS` (`[0, 600, 1800, 7200, 21600, 43200]`) ; le nombre d'essais en est le nombre d'éléments. Au moins 20 h 40 séparent le premier essai de l'abandon ; la granularité réelle est celle des passages (tâche toutes les heures, visites).
 
-Garanties et limites :
+Cas d'abandon immédiat de `queued_mail` : événement supprimé ; album clôturé ; invité supprimé, sans adresse ou sans photo ; événement sans adresse d'organisateurs ni clé d'album ; ouverture d'un album déjà dévoilé ; nature de message inconnue. Cas `retry` : révélation pas encore atteinte (M3, M4), album pas encore ouvert (M2). Un `retry` **consomme un essai** : une révélation repoussée de plus d'une vingtaine d'heures après la mise en file épuise les six essais, et les messages sont abandonnés sans être remis en file (la réservation de l'événement est déjà écrite).
 
-- **Une seule fois par album.** Avant d'envoyer, le script écrit la date dans `open_mail_sent_at` ou `reveal_mail_sent_at` par un `UPDATE … WHERE … IS NULL`. Si deux visites arrivent en même temps, une seule passe.
-- **Pas de nouvel essai.** La date est écrite avant l'envoi. Si `mail()` échoue, l'échec est noté dans le journal du serveur et le message n'est pas renvoyé.
-- Le message d'ouverture n'est envoyé que si l'événement a un e-mail d'organisateur et une clé d'album. Si l'album est déjà dévoilé au moment du traitement, il est marqué comme traité sans envoi.
-- Le QR code n'apparaît dans un e-mail que si son image est sur le serveur. L'administration la dépose juste après la création de l'événement, et rattrape les événements qui n'en ont pas à chaque affichage de la liste.
+**Garanties et limites.**
 
-### 9.4 Tâche planifiée
+- Un message est mis en file une fois (clé unique, `NOT EXISTS`, réservation de l'album en transaction) et un essai n'est joué que par une requête à la fois.
+- Un message `sent_at` ne repart jamais.
+- **Fenêtre de double envoi** : si le processus s'arrête entre le retour de `mail()` et l'écriture de `sent_at`, l'essai est déjà compté et `sent_at` reste nul : le message est retenté après le délai suivant et peut arriver deux fois. Fenêtre étroite (quelques millisecondes), jamais observée ni testée.
+- **Remise non garantie** : `mail()` répond vrai quand le serveur local de l'hébergeur accepte le message. Rien ne dit qu'il arrive ; aucun retour de remise n'est lu.
+- **Jamais éprouvé par un envoi réel.** Le mécanisme a été vérifié sur une base de test SQLite et dans le navigateur en local (`mail_log`, qui fait répondre vrai), pas par la fonction `mail()` d'OVH.
+- Une panne de la file (`PDOException` : table absente, base occupée) est attrapée par `send_due_mails()` : transaction annulée, ligne dans le journal (« OuiSnap : file d'attente des e-mails en panne »), la page répond normalement. Le passage suivant recommence.
+- **Événements déjà traités** : les dates `open_mail_sent_at` et `reveal_mail_sent_at` déjà écrites avant la migration 016 ne sont pas reprises : seuls les événements dont la réservation est encore nulle passent par la file. Les messages perdus avant 016 le restent.
+- **Code sans la table** : si le nouveau code tourne avant la migration 016, les appels ne plantent pas, mais aucun message ne part (la mise en file échoue, la réservation est annulée) ; les messages attendent la migration, sans perte. Voir [13.1](#131-procédure).
+- Les abandons restent comptés dans l'administration tant que l'événement existe. Aucun écran ni script ne renvoie un message abandonné (secours manuel en [13.6](#136-exploitation-courante)).
 
-`cron.php` appelle `send_due_mails()` et ne renvoie rien. Il n'a pas de protection : l'appeler ne fait qu'envoyer ce qui devait partir.
+### 9.5 Tâche planifiée
 
-Le README d'origine demande de créer, dans l'espace client OVH, une tâche horaire sur `ouisnap/api/cron.php`. Cette tâche ne se voit pas dans le dépôt : **à confirmer** dans l'espace client. Sans elle, les messages partent à la première visite utile après l'échéance.
+`cron.php` ne renvoie rien et n'a pas de protection : l'appeler ne fait qu'envoyer ce qui devait partir (et noter le passage). Il s'exécute dans deux modes, détectés par `PHP_SAPI === 'cli'` :
+
+| Mode | Qui l'a lancé | `cron_last_mode` | Bornes de `send_due_mails` | Particularité |
+|---|---|---|---|---|
+| `cli` | Le planificateur de l'hébergeur | `cli` | 500 messages, 600 secondes | Sans clé `site_url` dans la configuration (et sans `mail_log`), le passage est noté, une ligne est écrite dans le journal et le script sort en erreur (code 1) sans rien envoyer : en ligne de commande, le domaine du site ne se devine pas et les liens des messages seraient faux. |
+| `web` | Un appel de l'adresse `/api/cron.php` (navigateur, `curl`, ou tâche OVH réglée sur une adresse) | `web` | 100 messages, 20 secondes | Le domaine est déduit de la requête si `site_url` manque. |
+
+Dans les deux cas, le script écrit d'abord `cron_last_run` (heure UTC) et `cron_last_mode` dans `settings` par `save_setting()`. Si cette écriture échoue (`PDOException`), l'erreur est notée dans le journal et l'envoi continue. Le mode `web` fausse l'état affiché : n'importe qui peut appeler l'adresse (voir [10.7](#107-risques-connus-et-limites)), et l'administration écrit alors « , par un appel web ».
+
+L'administration lit ces deux réglages dans `admin_status()` ([6.2](#62-endpoints)) et alerte au-delà de deux heures sans passage (`2 * 3600` dans `MailStatus`, `admin-app.tsx`), ou si `cronAge` est nul.
+
+La tâche se crée à la main dans l'espace client OVH : voir [13.7](#137-créer-la-tâche-planifiée-chez-ovh). **Au 6 octobre 2026, elle n'est pas créée** : l'administration affiche « aucun passage enregistré » tant qu'elle ne passe pas. Sans elle, les messages partent à la première visite utile après l'échéance.
 
 ---
 
@@ -1049,7 +1168,7 @@ Les limites d'envoi de PHP chez OVH (`upload_max_filesize`, `post_max_size`) ne 
 | Liens porteurs de secrets | La clé d'album et le jeton du lien personnel sont dans l'adresse (`?k=`, `?t=`). Ils peuvent rester dans l'historique du navigateur et dans les journaux d'accès du serveur. | Atténué : `Referrer-Policy`, retrait de `t` après lecture. Le lien de réinitialisation, lui, utilise le fragment. |
 | Secrets en clair dans la base | `events.album_key` et `guests.link_token` sont lisibles par qui a accès à la base. | Choix assumé : il faut pouvoir réafficher et renvoyer ces liens. |
 | Pas de limitation de débit hors administration | `join`, `upload` et `contact` n'ont pas de plafond par adresse. `contact` n'a qu'un champ piège. | Les limites par événement (photographes, photos par photographe) bornent les abus quand elles sont réglées. |
-| `cron.php` et `qr.php` publics | Appelables par tous | Sans effet nuisible : envoi de ce qui devait partir ; image non secrète. |
+| `cron.php` et `qr.php` publics | Appelables par tous | Sans effet nuisible : envoi de ce qui devait partir (borné à 100 messages et 20 secondes par appel web) ; image non secrète. Un appel web note aussi un passage : l'état affiché dans l'administration peut être faussé par un tiers, mais il signale alors « par un appel web ». |
 | Pas de jeton anti-CSRF | L'administration repose sur le cookie `SameSite=Strict` | Suffisant pour les navigateurs actuels. |
 | Pas d'en-tête `Content-Security-Policy` | Non défini | Le site ne charge aucun script d'un autre domaine. |
 | Adresse IP du visiteur | La limitation des essais lit `REMOTE_ADDR`. Si l'hébergeur place un relais devant PHP, toutes les requêtes peuvent sembler venir de la même adresse. | À confirmer chez OVH. Le plafond global de 30 échecs couvre ce cas. |
@@ -1188,6 +1307,8 @@ Deux points à savoir :
 
 **Pourquoi la migration passe avant le déploiement.** Le nouveau code attend le nouveau schéma. Le cas le plus net : sans les tables de `014_password_reset.sql`, `admin_password()` échoue et l'administration refuse toute connexion. Une colonne ajoutée en avance, elle, ne gêne pas l'ancien code : c'est le cas de `015_photo_client_id.sql` (l'ancien `upload.php` nomme ses colonnes).
 
+**Cas de `016_mail_queue.sql` (file des e-mails).** Elle crée une table que l'ancien code ignore : elle passe avant le déploiement sans gêner personne. Si le nouveau code est déployé avant elle, rien ne plante (les erreurs de la file sont attrapées), mais aucun e-mail d'ouverture ou de révélation ne part tant que la table manque : la réservation de l'album est annulée avec la mise en file, et le journal se remplit d'une ligne par appel. Les messages ne sont pas perdus : ils partent après la migration. Retour arrière : redéployer le commit précédent ; la table reste, sans effet, et les messages encore en file ne partent plus (l'ancien code ne la lit pas).
+
 **Invité avec la page ouverte pendant la mise en ligne.** Sa page déjà chargée continue de fonctionner avec l'ancien code : elle envoie les photos sans `client_id`, que le nouveau `upload.php` accepte comme avant (sans anti-doublon). Les photos en attente d'une page de la nouvelle version sont gardées sur le téléphone et reprises à la réouverture. Faire la mise en ligne hors d'un événement en cours reste préférable. Retour arrière : redéployer le commit précédent ; la colonne reste, sans effet.
 
 **Exception : la toute première installation.** Le script de migration lit les accès MySQL dans le `api/config.php` présent sur le serveur. Sur un hébergement vide, il faut donc déployer une première fois, puis migrer.
@@ -1231,6 +1352,8 @@ Le script temporaire porte un nom aléatoire et il est supprimé même en cas d'
 | `/api/lib.php` et `/api/config.php` dans un navigateur | Accès refusé (403) |
 | Adresse en `http://` | Redirigée vers `https://` |
 | E-mails | Le message d'ouverture arrive aux organisateurs de l'événement de test |
+| État de la file des e-mails | En haut de la liste de l'administration : « Tâche planifiée : … ». Aucune ligne « abandonné » ni « en attente de nouvel essai » une fois l'événement de test traité |
+| Tâche planifiée | Tant qu'elle n'est pas créée : « aucun passage enregistré » en rouge. Dans l'heure qui suit sa création : « dernier passage il y a N minutes », sans « par un appel web » (13.7) |
 
 Penser à supprimer l'événement de test ensuite.
 
@@ -1275,11 +1398,25 @@ Dans l'ordre :
 | Sujet | État |
 |---|---|
 | Journaux | Les erreurs sont écrites par `error_log()` avec le préfixe « OuiSnap », dans le journal PHP de l'hébergement (emplacement : à confirmer dans l'espace client OVH). Il n'y a ni tableau de bord ni alerte. |
-| Tâche planifiée | Appel horaire de `api/cron.php`, à créer dans l'espace client OVH (à confirmer, voir [9.4](#94-tâche-planifiée)) |
+| Tâche planifiée | Appel horaire de `api/cron.php`, **à créer** dans l'espace client OVH (voir [13.7](#137-créer-la-tâche-planifiée-chez-ovh) et [9.5](#95-tâche-planifiée)). Son état se lit en haut de la liste de l'administration. |
+| File des e-mails | Lignes de la table `mail_queue`, consultables par phpMyAdmin (`abandoned_at` non nul : abandonné ; `sent_at` nul et `abandoned_at` nul : en attente). Le journal PHP contient les lignes « OuiSnap : e-mail N de la file … ». Secours manuel, non éprouvé : pour retenter un message abandonné, remettre `attempts` à 0, `last_attempt_at` et `abandoned_at` à `NULL` sur sa ligne ; il part au passage suivant. |
 | Sauvegardes | Aucun script de sauvegarde dans le dépôt. D'après le README d'origine, les photos (`ouisnap-data/`) et la base ne sont sauvegardées que par les instantanés d'OVH (à confirmer). |
 | Suppression des albums | Manuelle, depuis l'administration. La politique de confidentialité annonce une suppression au plus tard six mois après la clôture : rien ne l'automatise. |
 | Demandes de la vitrine | Reçues par e-mail ; aussi conservées dans la table `requests`, sans écran pour les relire ni purge automatique |
 | Espace disque | Le poids de chaque album s'affiche dans l'administration (colonne `bytes`). Pas de quota ni d'alerte. |
+
+### 13.7 Créer la tâche planifiée chez OVH
+
+À faire une seule fois, à la main : rien dans le dépôt ni dans `npm run deploy` ne la crée. **Pas encore faite au 6 octobre 2026.**
+
+1. Espace client OVH, hébergement du site, onglet « Plus », puis « Planificateur de tâches » (« Ajouter une tâche »).
+2. **Commande** : le dossier distant du site, suivi de `/api/cron.php`. Le dossier est la valeur de `OVH_REMOTE_DIR` dans `.env.deploy` (l'exemple de [`../deploy.env.example`](../deploy.env.example) est `ouisnap`, soit `ouisnap/api/cron.php`). Ne pas ouvrir `.env.deploy` dans un outil qui en recopie le contenu : seule cette valeur est utile.
+3. **Langage** : PHP, dans la version du site (8.1 au minimum, voir [3.1](#31-versions)).
+4. **Fréquence** : toutes les heures. L'alerte de l'administration se déclenche après deux heures sans passage.
+5. Enregistrer et activer la tâche.
+6. **Vérifier** : au passage suivant, recharger l'administration : « Tâche planifiée : dernier passage il y a N minutes. » (sans « , par un appel web », ce qui indique que l'hébergeur l'a lancée en ligne de commande). L'alerte rouge doit avoir disparu.
+
+Points à vérifier au premier passage (non éprouvés) : que `mail()` fonctionne depuis la ligne de commande chez OVH ; la durée maximale qu'OVH accorde à une tâche (la borne de 600 secondes de `cron.php` n'en tient pas compte) ; que `site_url` est bien dans `api/config.php` (déployé depuis `OVH_SITE_URL`) : sans lui, la tâche note son passage mais n'envoie rien.
 
 ---
 
@@ -1316,7 +1453,7 @@ Ils ne se lancent pas par une commande npm : ils sont joués par un agent, à tr
 |---|---|
 | Caméra simulée | Le navigateur de test n'a pas de webcam. Un script injecté avant le chargement de la page (`addInitScript`) remplace `getUserMedia` par le flux vidéo d'un canevas animé, qui affiche « Photo N » sur un fond de couleur. |
 | Révélation | Pour ne pas attendre le lendemain, le test modifie la date de révélation depuis l'administration. |
-| E-mails | Rien ne part en local. Le test `mot-de-passe` ouvre le fichier HTML écrit dans `.local/` et clique sur son bouton. |
+| E-mails | Rien ne part en local (`mail_log` : `send_mail()` écrit un fichier et répond vrai). Le test `mot-de-passe` ouvre le fichier HTML écrit dans `.local/` et clique sur son bouton. |
 | Journal du test | Une ligne `N. Titre` par étape, puis `  ✓ texte` par contrôle réussi. `  ✗ texte` note un constat qui n'arrête pas le test. Un contrôle faux arrête le test et prend une capture d'écran de chaque page ouverte. |
 | Enregistrement du résultat | Le script s'exécute dans le serveur Playwright, sans accès aux fichiers. Il pose son résultat dans le `localStorage` d'une page du site, puis demande à Playwright d'écrire l'état du navigateur dans `.playwright-mcp/dernier-<test>.json`. `rapport.mjs` l'en extrait. |
 | Captures | Dans `.playwright-mcp/e2e/`. Le test `reprise` en prend six (étapes 3, 4, 6, 7, 8 et 10). |
@@ -1339,6 +1476,7 @@ D'après les limites déclarées dans `rapport.mjs` et la lecture des scripts :
 - Le passage automatique à l'heure de révélation, la clôture, l'état « à venir ».
 - Le téléchargement ZIP, le PDF des tables et le PDF des organisateurs.
 - L'envoi réel des e-mails par OVH, et le contenu des e-mails autres que celui de réinitialisation.
+- La file d'attente des e-mails (mise en file, nouveaux essais, abandon, bloc d'état de l'administration) : vérifiée à la main sur la base de test SQLite et dans le navigateur, sans scénario Playwright. Rien ne simule non plus un échec de `mail()` réel, ni deux passages simultanés (`php -S` traite une requête à la fois).
 - L'expiration du lien de réinitialisation au bout d'une heure.
 - La page vitrine et le formulaire de demande.
 - Les limites (nombre de photographes, photos par photographe, bonus e-mail), le lien personnel `?t=`.
@@ -1368,8 +1506,14 @@ Uniquement ce que le code ou le README d'origine confirment.
 | Photos en attente quand l'album est dévoilé : non envoyées, gardées sur le téléphone avec un message. Choix par défaut, pas encore tranché par le propriétaire | `upload-queue.ts` |
 | Photos en attente gardées 7 jours sur le téléphone. Choix par défaut, pas encore tranché | `KEEP_MS` dans `upload-queue.ts` |
 | Un invité qui change de navigateur ou vide ses données perd sa session, sauf s'il a laissé son e-mail (lien personnel) | `guest-app.tsx`, `join.php` |
-| Un e-mail d'ouverture ou de révélation en échec n'est pas renvoyé | `mail.php` |
-| Sans tâche planifiée ni visite, les e-mails d'ouverture et de révélation ne partent pas à l'heure | `mail.php`, `cron.php` |
+| Un e-mail d'ouverture ou de révélation en échec est retenté (10 min, 30 min, 2 h, 6 h, 12 h), puis abandonné au sixième échec ; un message abandonné n'est jamais renvoyé, sauf à la main dans la base | `mail.php` (`MAIL_RETRY_DELAYS`) |
+| Nouveaux essais jamais éprouvés par un envoi réel ; `mail()` qui répond vrai ne garantit pas la remise | `mail.php` (`send_mail`) |
+| Fenêtre étroite de double envoi si le serveur s'arrête entre l'envoi et l'écriture de `sent_at` | `flush_mail_queue()` |
+| Une révélation repoussée de plus d'une vingtaine d'heures après la mise en file épuise les essais : les messages sont abandonnés et ne sont pas remis en file | `queued_mail()` |
+| Les événements dont les messages avaient été réservés avant la migration 016 ne sont pas repris | `claim_event_mails()` |
+| Sans tâche planifiée ni visite, les e-mails d'ouverture et de révélation ne partent pas à l'heure ; la tâche est à créer chez OVH, son état est visible dans l'administration | `mail.php`, `cron.php`, `admin_status()` |
+| Le compteur d'e-mails abandonnés ne baisse qu'à la suppression de l'événement ; le compteur « en attente » compte aussi les messages pas encore essayés | `admin_status()` |
+| L'état de la tâche peut être faussé par un appel web de `cron.php` (signalé « par un appel web ») | `cron.php` |
 | Pas d'application installable ni de mode hors ligne : pas de service worker, donc pas d'envoi en arrière-plan page fermée | Aucun manifeste ni service worker |
 | Cartes imprimables : rendu non vérifié sur papier. Les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés ; rien n'a été imprimé | `card-kit.ts`, `table-card.ts`, `organizer-card.ts` |
 | Cartes imprimables : rendu non vérifié sur Safari. Le tracé emploie `roundRect()` du canevas et les polices chargées par `document.fonts.load()` | `card-kit.ts` |
@@ -1401,7 +1545,7 @@ Aucune de ces pistes n'est décidée. Elles découlent directement des limites c
 
 - Suppression automatique des albums six mois après la clôture, pour tenir sans geste manuel l'engagement de la politique de confidentialité.
 - Sauvegarde propre des photos et de la base, en plus des instantanés de l'hébergeur.
-- Nouvel essai des e-mails en échec.
+- Renvoi à la main d'un e-mail abandonné depuis l'administration, et suivi de la remise réelle des e-mails (retours d'erreur de l'hébergeur).
 - Écran de lecture des demandes (`requests`) dans l'administration.
 - Limitation de débit sur `join`, `upload` et `contact`.
 - Retrait de la table `waitlist` et des données de démonstration par une migration de nettoyage.
@@ -1434,13 +1578,19 @@ Aucune de ces pistes n'est décidée. Elles découlent directement des limites c
 
 | Je veux modifier | Fichiers concernés |
 |---|---|
-| Un texte de la page vitrine | `src/app/page.tsx` ; le formulaire : `src/components/request-form.tsx` |
+| Un texte de la page vitrine (dont « Le lendemain », qui annonce la révélation) | `src/app/page.tsx` ; le formulaire : `src/components/request-form.tsx` |
 | La vidéo ou les images de la vitrine | `public/media/` ; `src/components/teaser-video.tsx` |
 | Un texte de l'appli invité | `src/components/guest/guest-app.tsx`, `camera.tsx`, `my-photos.tsx` |
 | Un texte qui dépend de la nature de l'événement (écran) | `src/lib/kinds.ts` |
 | Un texte qui dépend de la nature de l'événement (e-mail) | `public/api/mail.php` : `KIND_TEXTS`, `album_label()`, `hosts_label()` |
 | Ajouter une nature d'événement | `src/lib/kinds.ts`, `EVENT_KINDS` dans `public/api/lib.php`, `KIND_TEXTS` et les libellés de `public/api/mail.php`, le tableau `$kinds` de `public/api/contact.php` |
 | Le contenu ou l'allure d'un e-mail | `public/api/mail.php` |
+| Le nombre d'essais et les délais entre essais des e-mails d'ouverture et de révélation | `MAIL_RETRY_DELAYS` dans `public/api/mail.php` |
+| Les cas où un e-mail de la file est abandonné ou reporté | `queued_mail()` dans `public/api/mail.php` |
+| Le nombre de messages et la durée d'un passage d'envoi | Paramètres de `send_due_mails()` dans `public/api/mail.php` ; valeurs de la tâche planifiée dans `public/api/cron.php` |
+| La table de la file des e-mails | `database/016_mail_queue.sql`, `database/local.sqlite.sql` |
+| L'état de la tâche planifiée dans l'administration (textes, seuil de deux heures) | `MailStatus` dans `src/components/admin/admin-app.tsx` ; type dans `src/components/admin/types.ts` ; données dans `admin_status()` de `public/api/lib.php`, renvoyées par `public/api/admin-events.php` |
+| La tâche planifiée (ce qu'elle note, ses deux modes) | `public/api/cron.php`, `save_setting()` dans `public/api/lib.php` ; création chez OVH : [13.7](#137-créer-la-tâche-planifiée-chez-ovh) |
 | Un message d'erreur de l'API | Le fichier PHP de l'endpoint, ou `public/api/lib.php` pour les messages communs |
 | Les couleurs ou les polices | `src/app/globals.css`, `src/app/layout.tsx` ; puis `public/api/mail.php` et `src/lib/card-kit.ts`, qui ont leurs propres valeurs |
 | Le logo | `src/components/logo.tsx`, `src/app/icon.svg` ; en-tête des e-mails dans `mail.php` ; carte de table et carte des organisateurs dans `src/lib/card-kit.ts` (`logo()`) |
@@ -1464,7 +1614,7 @@ Aucune de ces pistes n'est décidée. Elles découlent directement des limites c
 | Les dates proposées à la création (révélation, clôture) | `src/components/admin/event-form.tsx` |
 | Les règles de validation d'un événement | `public/api/admin-event-save.php` |
 | Les règles d'ouverture, de révélation, de clôture | `public/api/lib.php` : `event_state()`, `reveal_at()`, `is_expired()`, `require_open()` |
-| Ce que voient les organisateurs avant la révélation | `public/api/album.php`, `src/components/album/album-app.tsx` |
+| Ce que voient les organisateurs avant la révélation (dont la phrase sans date de révélation) | `public/api/album.php`, `src/components/album/album-app.tsx` |
 | Le rythme de rafraîchissement de l'album | `REFRESH_MS` dans `src/components/album/album-app.tsx` |
 | Le nombre d'essais de connexion | Constantes de `public/api/admin-login.php` |
 | Les règles du mot de passe oublié | Constantes de `public/api/admin-forgot.php` et `public/api/admin-reset.php` |
