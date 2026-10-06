@@ -17,6 +17,11 @@ export type AdminEvent = {
   expired: boolean;
   emails: number; // photographes ayant laissé une adresse
   mailSentAt: string | null; // envoi du message de révélation
+  deleteAt?: string | null; // suppression automatique : date choisie par l'administrateur (vide = clôture + six mois)
+  deletesAt?: string | null; // date réelle prévue de la suppression ; null sans clôture
+  deleteNear?: boolean; // à moins de trente jours, ou dépassée
+  deleteWarnedAt?: string | null; // avertissement mis en file pour les organisateurs et l'administrateur
+  deleteWarningSentAt?: string | null; // premier envoi réussi de cet avertissement ; null tant que rien n'est parti
   guests: number;
   photos: number;
   bytes: number;
@@ -29,6 +34,11 @@ export type AdminStatus = {
   cronMode: "cli" | "web" | null; // lancée par l'hébergeur, ou par l'appel de son adresse web
   mailsPending: number; // e-mails de la file pas encore partis
   mailsAbandoned: number;
+  autoDeleteLastAt?: string | null; // dernière suppression automatique d'un album par la tâche planifiée
+  autoDeleteLastTitle?: string | null;
+  autoDeleteCount?: number;
+  retentionLastRun?: string | null; // dernier passage où les suppressions automatiques ont été examinées
+  retentionAge?: number | null; // secondes écoulées depuis, à l'horloge du serveur
 };
 
 export const inputClass =

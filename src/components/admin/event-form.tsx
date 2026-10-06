@@ -20,6 +20,16 @@ const closingDay = (iso: string | null) => toInput(iso).slice(0, 10);
 const closingIso = (day: string) =>
   day ? new Date(`${day}T23:59:59`).toISOString() : "";
 
+// Dernier jour permis pour la suppression : six mois après la clôture, sur le calendrier, sans déborder sur le
+// mois suivant (31 août donne le 28 ou le 29 février), comme le calcule l'API.
+function sixMonthsLater(day: string) {
+  const [year, month, date] = day.split("-").map(Number);
+  if (!year || !month || !date) return undefined;
+  const lastDay = new Date(Date.UTC(year, month - 1 + 7, 0)).getUTCDate();
+  const target = new Date(Date.UTC(year, month - 1 + 6, Math.min(date, lastDay)));
+  return target.toISOString().slice(0, 10);
+}
+
 // Clôture proposée par défaut : deux semaines après le début.
 function twoWeeksLater(start: string) {
   const day = new Date(`${start.slice(0, 10)}T12:00`);
@@ -54,6 +64,7 @@ export function EventForm({
   const [startsAt, setStartsAt] = useState(toInput(event?.startsAt ?? null));
   const [closesOn, setClosesOn] = useState(closingDay(event?.closesAt ?? null));
   const [closesEdited, setClosesEdited] = useState(Boolean(event));
+  const [deletesOn, setDeletesOn] = useState(closingDay(event?.deleteAt ?? null));
   const [revealAt, setRevealAt] = useState(toInput(event?.revealAt ?? null));
   const [revealEdited, setRevealEdited] = useState(Boolean(event));
   const [maxGuests, setMaxGuests] = useState(
@@ -79,6 +90,7 @@ export function EventForm({
         startsAt: toIso(startsAt),
         closesAt: closingIso(closesOn),
         revealAt: toIso(revealAt),
+        deleteAt: closingIso(deletesOn),
         maxGuests,
         maxPhotos,
       });
@@ -236,6 +248,30 @@ export function EventForm({
           />
           <p className="text-sm text-brume">
             Dernier jour d&apos;accès à l&apos;album. Vide : jamais.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-3">
+        <div className="flex flex-col gap-2 md:col-span-2">
+          <label htmlFor="deletesOn" className="libelle text-brume">
+            Suppression
+          </label>
+          <input
+            id="deletesOn"
+            type="date"
+            value={deletesOn}
+            min={closesOn || undefined}
+            max={closesOn ? sixMonthsLater(closesOn) : undefined}
+            onChange={(change) => setDeletesOn(change.target.value)}
+            className={`${inputClass} md:max-w-xs`}
+          />
+          <p className="text-sm text-brume">
+            Jour où l&apos;album et ses photos sont effacés du serveur. Vide :
+            six mois après la clôture, le délai maximal. Pour garder un album
+            plus longtemps, repoussez sa clôture. Les organisateurs et vous êtes
+            prévenus par e-mail 30 jours avant. Sans clôture, rien n&apos;est
+            supprimé automatiquement.
           </p>
         </div>
       </div>

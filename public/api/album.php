@@ -25,6 +25,9 @@ $body = [
     'code' => $event['code'], // pour afficher le QR code des invités
     'revealAt' => reveal_at($event)?->format(DATE_ATOM),
     'revealed' => $revealed,
+    // Suppression automatique à moins de trente jours : la page prévient les organisateurs (dates calculées, sans requête).
+    'closesAt' => utc($event['closes_at'] ?? null)?->format(DATE_ATOM),
+    'deletesAt' => deletion_is_near($event) ? deletion_at($event)?->format(DATE_ATOM) : null,
     'total' => array_sum(array_column($guests, 'count')),
     'guests' => $guests,
 ];

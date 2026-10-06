@@ -15,6 +15,8 @@ type Album = {
   code: string;
   revealAt: string | null;
   revealed: boolean;
+  closesAt?: string | null; // dernier jour d'accès à l'album
+  deletesAt?: string | null; // suppression automatique, seulement si elle est à moins de trente jours
   total: number;
   guests: { name: string; count: number }[];
   photos?: Photo[];
@@ -22,6 +24,15 @@ type Album = {
 
 const REFRESH_MS = 30_000;
 const plural = (count: number, word: string) => `${count} ${word}${count > 1 ? "s" : ""}`;
+
+// « 12 avril 2027 », en heure de Paris.
+const longDay = (iso: string) =>
+  new Date(iso).toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/Paris",
+  });
 
 // Horloge à la seconde pour le compte à rebours.
 function subscribeSeconds(notify: () => void) {
@@ -242,6 +253,14 @@ export function AlbumApp() {
         <p className="text-brume">
           {plural(album.total, "photo")}, {plural(album.guests.length, "invité")}
         </p>
+        {album.deletesAt && (
+          <p role="note" className="max-w-[44ch] text-sm leading-relaxed text-or-clair">
+            {album.closesAt && longDay(album.closesAt) !== longDay(album.deletesAt)
+              ? `Cet album reste accessible jusqu'au ${longDay(album.closesAt)}, puis sera supprimé le ${longDay(album.deletesAt)}.`
+              : `Cet album sera supprimé le ${longDay(album.deletesAt)}.`}{" "}
+            Pensez à télécharger vos photos.
+          </p>
+        )}
         {photos.length > 0 && (
           // Envoi de formulaire classique : le navigateur télécharge l'archive sans la charger en mémoire.
           <form method="post" action="/api/album-zip.php">

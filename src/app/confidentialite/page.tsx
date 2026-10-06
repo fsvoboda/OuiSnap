@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function Confidentialite() {
   return (
-    <LegalPage titre="Politique de confidentialité" miseAJour="3 octobre 2026">
+    <LegalPage titre="Politique de confidentialité" miseAJour="6 octobre 2026">
       <Section titre="Responsable du traitement">
         <p>
           <strong>{EDITEUR.nom}</strong> ({EDITEUR.enseigne}), {EDITEUR.adresse}. Pour toute
@@ -90,9 +90,11 @@ export default function Confidentialite() {
         <ul>
           <li>
             Photos, prénoms et adresses e-mail liés à un événement : jusqu&apos;à la suppression de
-            l&apos;album, qui intervient au plus tard six mois après sa date de clôture.
+            l&apos;album. Elle est automatique six mois après sa date de clôture, les organisateurs
+            étant prévenus par e-mail trente jours avant ; elle peut être retardée de quelques jours
+            pour respecter ce préavis.
           </li>
-          <li>Demandes reçues par le formulaire : trois ans après le dernier échange.</li>
+          <li>Demandes reçues par le formulaire : trois ans après leur réception.</li>
           <li>
             Pièces comptables liées à une prestation : dix ans, comme l&apos;exige la loi.
           </li>

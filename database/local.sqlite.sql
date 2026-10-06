@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS events (
   wedding_date TEXT NULL,
   starts_at TEXT NULL,
   closes_at TEXT NULL,
+  delete_at TEXT NULL,
+  delete_warned_at TEXT NULL,
   open_mail_sent_at TEXT NULL,
   reveal_at TEXT NULL,
   reveal_mail_sent_at TEXT NULL,
@@ -88,7 +90,7 @@ CREATE TABLE IF NOT EXISTS admin_password_resets (
 
 CREATE INDEX IF NOT EXISTS admin_password_resets_time ON admin_password_resets (created_at);
 
--- File d'attente des e-mails d'ouverture et de révélation (voir database/016_mail_queue.sql).
+-- File d'attente des e-mails d'ouverture, de révélation et d'avertissement de suppression (voir database/016_mail_queue.sql).
 CREATE TABLE IF NOT EXISTS mail_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id INTEGER NOT NULL REFERENCES events (id) ON DELETE CASCADE,

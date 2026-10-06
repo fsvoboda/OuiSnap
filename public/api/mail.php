@@ -39,6 +39,8 @@ const KIND_TEXTS = [
         'open_extra' => "Profitez de votre journée : vos invités s'occupent des souvenirs.",
         'reveal_heading' => 'Votre album de mariage est dévoilé',
         'reveal_extra' => 'Revivez votre mariage à travers le regard de vos invités.',
+        'delete_heading' => 'Votre album de mariage sera bientôt supprimé',
+        'delete_extra' => 'Les souvenirs de votre mariage vous appartiennent : gardez-en une copie chez vous.',
     ],
     'bapteme' => [
         'thanks' => "Merci d'avance de votre contribution aux souvenirs de ce baptême.",
@@ -47,6 +49,8 @@ const KIND_TEXTS = [
         'open_extra' => "Profitez de la cérémonie : vos invités s'occupent des souvenirs.",
         'reveal_heading' => "L'album du baptême est dévoilé",
         'reveal_extra' => 'Revivez ce baptême à travers le regard de vos proches.',
+        'delete_heading' => "L'album du baptême sera bientôt supprimé",
+        'delete_extra' => 'Les souvenirs de ce baptême vous appartiennent : gardez-en une copie chez vous.',
     ],
     'anniversaire' => [
         'thanks' => "Merci d'avance de votre contribution aux souvenirs de cet anniversaire.",
@@ -55,6 +59,8 @@ const KIND_TEXTS = [
         'open_extra' => "Profitez de la fête : vos invités s'occupent des souvenirs.",
         'reveal_heading' => "L'album d'anniversaire est dévoilé",
         'reveal_extra' => 'Revivez cet anniversaire à travers le regard de vos invités.',
+        'delete_heading' => "L'album d'anniversaire sera bientôt supprimé",
+        'delete_extra' => 'Les souvenirs de cet anniversaire vous appartiennent : gardez-en une copie chez vous.',
     ],
 ];
 
@@ -82,6 +88,12 @@ function french_date(DateTimeImmutable $date, bool $withTime = true): string
     $text = $days[(int) $date->format('w')] . ' ' . ((int) $date->format('j') === 1 ? '1er' : $date->format('j'))
         . ' ' . $months[(int) $date->format('n') - 1];
     return $withTime ? $text . ' à ' . $date->format('G\\hi') : $text;
+}
+
+// « lundi 12 avril 2027 », en heure de Paris : pour les échéances lointaines, l'année compte.
+function french_day(DateTimeImmutable $date): string
+{
+    return french_date($date, false) . ' ' . $date->setTimezone(new DateTimeZone('Europe/Paris'))->format('Y');
 }
 
 // QR code des invités, s'il a été enregistré : l'image mène à sa version plein écran.
@@ -176,6 +188,91 @@ function organizer_reveal_mail(array $event, int $photos, int $guests): array
     ];
 }
 
+// Avertissement envoyé aux organisateurs trente jours avant la suppression automatique de l'album.
+// $when : date à laquelle l'album sera supprimé. Après la clôture, les organisateurs n'ont plus accès à l'album
+// (album.php répond « clôturé ») : le message le dit et les renvoie vers leur photographe, sans lien vers l'album.
+function organizer_delete_mail(array $event, DateTimeImmutable $when): array
+{
+    $day = french_day($when);
+    $closes = utc($event['closes_at'] ?? null);
+    $accessible = !is_expired($event) && !empty($event['album_key']);
+    // Les réponses vont à la première adresse de l'administrateur, pas à l'adresse d'expédition.
+    // Sans adresse d'administrateur, le message n'invite pas à répondre : personne ne lirait la réponse.
+    $contact = (string) (admin_emails()[0] ?? '');
+    $extra = kind_text($event, 'delete_extra', 'Ces souvenirs vous appartiennent : gardez-en une copie chez vous.');
+
+    if ($accessible) {
+        $closesDay = $closes ? french_day($closes) : null;
+        $paragraphs = [
+            organizer_greeting($event),
+            "L'album « {$event['title']} » et toutes ses photos seront définitivement supprimés de OuiSnap le $day.",
+            $closesDay !== null && $closesDay !== $day
+                ? "Votre album reste accessible jusqu'au $closesDay au soir : téléchargez vos photos avant cette date."
+                : 'Téléchargez vos photos avant cette date.',
+            $extra,
+            'Après la suppression, les photos ne pourront plus être récupérées.',
+        ];
+    } else {
+        $paragraphs = [
+            organizer_greeting($event),
+            $closes
+                ? "L'album « {$event['title']} » est clôturé depuis le " . french_day($closes) . " : il n'est plus accessible en ligne."
+                : "L'album « {$event['title']} » n'est plus accessible en ligne.",
+            "Ses photos seront définitivement supprimées de OuiSnap le $day.",
+            "Si vous les avez déjà téléchargées, vous n'avez rien à faire."
+                . ($contact === '' ? '' : ' Sinon, écrivez à votre photographe avant cette date, en répondant à ce '
+                    . "message : il pourra rouvrir l'accès à votre album."),
+            $extra,
+            'Après la suppression, les photos ne pourront plus être récupérées.',
+        ];
+    }
+
+    return [
+        'subject' => "« {$event['title']} » : votre album sera supprimé le $day",
+        'label' => album_label($event),
+        'heading' => kind_text($event, 'delete_heading', 'Votre album sera bientôt supprimé'),
+        'paragraphs' => array_values(array_filter($paragraphs)),
+        'highlight' => $accessible
+            ? 'À télécharger avant le ' . ($closes && french_day($closes) !== $day ? french_day($closes) : $day) . '.'
+            : "Suppression définitive le $day.",
+        'image' => null,
+        'button' => $accessible
+            ? ['label' => 'Ouvrir mon album', 'url' => album_link($event)]
+            : ($contact !== '' ? ['label' => 'Écrire à mon photographe', 'url' => 'mailto:' . $contact] : null),
+        'note' => $accessible ? 'Ce lien est privé : il donne accès à votre album.' : null,
+        'footer' => ORGANIZER_FOOTER,
+        'reply_to' => $contact === '' ? null : $contact,
+    ];
+}
+
+// Avertissement envoyé à l'administrateur : l'album concerné et sa date de suppression automatique.
+function admin_delete_mail(array $event, DateTimeImmutable $when, int $photos): array
+{
+    $day = french_day($when);
+    $closes = utc($event['closes_at'] ?? null);
+    $organizers = implode(', ', array_filter([$event['organizer_name'] ?? null, $event['organizer_email'] ?? null]));
+    return [
+        'subject' => "OuiSnap : « {$event['title']} » sera supprimé le $day",
+        'label' => 'Administration',
+        'heading' => 'Suppression automatique à venir',
+        'paragraphs' => array_values(array_filter([
+            "L'album « {$event['title']} » (code {$event['code']}, $photos photo" . ($photos > 1 ? 's' : '')
+                . ") sera supprimé automatiquement le $day : photos, invités, QR code et lien de l'album.",
+            $closes ? 'Clôture : ' . french_day($closes) . '.' : null,
+            empty($event['organizer_email'])
+                ? "Aucune adresse d'organisateurs n'est renseignée : ils ne sont pas prévenus."
+                : "Les organisateurs ($organizers) sont prévenus par e-mail.",
+            "Pour garder l'album plus longtemps, modifiez sa date de suppression ou de clôture dans l'administration "
+                . 'avant cette date.',
+        ])),
+        'highlight' => null,
+        'image' => null,
+        'button' => ['label' => "Ouvrir l'administration", 'url' => site_url() . '/admin/'],
+        'note' => 'La suppression est définitive : aucune copie des photos n\'est gardée.',
+        'footer' => "Message envoyé aux adresses de l'administrateur de OuiSnap.",
+    ];
+}
+
 // Message envoyé à l'administrateur qui a oublié son mot de passe.
 function admin_reset_mail(string $url, DateTimeImmutable $expires): array
 {
@@ -255,7 +352,9 @@ function mail_text(array $mail): string
     if ($mail['image'] ?? null) {
         $lines[] = $mail['image']['caption'] . "\nQR code : " . $mail['image']['href'];
     }
-    $lines[] = $mail['button']['label'] . " :\n" . $mail['button']['url'];
+    if ($mail['button'] ?? null) {
+        $lines[] = $mail['button']['label'] . " :\n" . $mail['button']['url'];
+    }
     if ($mail['note']) {
         $lines[] = $mail['note'];
     }
@@ -291,9 +390,16 @@ function mail_html(array $mail): string
             . '<p style="margin:14px auto 0;max-width:380px;font:13px/1.6 ' . $sans . ';color:#6b7a70;">'
             . $e($mail['image']['caption']) . '</p></td></tr></table>'
         : '';
-    $url = $e($mail['button']['url']);
+    // Le bouton est facultatif : un message peut n'avoir aucun lien à proposer.
+    $url = ($mail['button'] ?? null) ? $e($mail['button']['url']) : '';
+    $button = $url === ''
+        ? ''
+        : '<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:8px auto 0;"><tr>'
+            . '<td align="center" style="background:#cba660;border-radius:999px;">'
+            . '<a href="' . $url . '" style="display:inline-block;padding:15px 34px;font:bold 15px/1 ' . $sans . ';'
+            . 'color:#121a16;text-decoration:none;">' . $e($mail['button']['label']) . '</a></td></tr></table>';
     // Adresse écrite en toutes lettres sous le bouton, pour les messageries qui neutralisent les boutons.
-    $plainLink = ($mail['plain_link'] ?? null)
+    $plainLink = ($mail['plain_link'] ?? null) && $url !== ''
         ? '<p style="margin:20px 0 0;font:12px/1.6 ' . $sans . ';color:#6b7a70;text-align:center;">'
             . 'Si le bouton ne fonctionne pas, copiez cette adresse dans votre navigateur :<br>'
             . '<a href="' . $url . '" style="color:#6b7a70;word-break:break-all;">' . $url . '</a></p>'
@@ -317,10 +423,7 @@ function mail_html(array $mail): string
         . $paragraphs
         . $highlight
         . $image
-        . '<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:8px auto 0;"><tr>'
-        . '<td align="center" style="background:#cba660;border-radius:999px;">'
-        . '<a href="' . $url . '" style="display:inline-block;padding:15px 34px;font:bold 15px/1 ' . $sans . ';'
-        . 'color:#121a16;text-decoration:none;">' . $e($mail['button']['label']) . '</a></td></tr></table>'
+        . $button
         . $plainLink
         . $note
         . '</td></tr>'
@@ -329,7 +432,8 @@ function mail_html(array $mail): string
         . '</table></td></tr></table></body></html>';
 }
 
-// $replyTo : adresse à laquelle répondre, quand ce n'est pas celle de OuiSnap.
+// $replyTo : adresse à laquelle répondre, quand ce n'est pas celle de OuiSnap. Un message peut aussi la porter
+// lui-même (clé reply_to), pour ceux qui partent de la file d'attente.
 function send_mail(string $to, array $mail, ?string $replyTo = null): bool
 {
     $config = config();
@@ -355,7 +459,7 @@ function send_mail(string $to, array $mail, ?string $replyTo = null): bool
     $boundary = 'ouisnap-' . bin2hex(random_bytes(12));
     $headers = implode("\r\n", [
         'From: OuiSnap <' . $from . '>',
-        'Reply-To: ' . ($replyTo ?? $from),
+        'Reply-To: ' . ($replyTo ?? $mail['reply_to'] ?? $from),
         'MIME-Version: 1.0',
         'Content-Type: multipart/alternative; boundary="' . $boundary . '"',
     ]);
@@ -368,13 +472,18 @@ function send_mail(string $to, array $mail, ?string $replyTo = null): bool
     return mail($to, mb_encode_mimeheader($mail['subject'], 'UTF-8', 'B'), $body, $headers, '-f' . $from);
 }
 
-// --- File d'attente des messages d'ouverture et de révélation ---------------
+// --- File d'attente des messages d'ouverture, de révélation et d'avertissement de suppression ---
 // Table mail_queue : une ligne par message à envoyer. Un envoi en échec est retenté plus tard ;
 // un message envoyé ne repart jamais. Le corps n'est pas gardé : il est reconstruit à chaque essai.
 
 const MAIL_OPEN_ORGANIZER = 'open_organizer';     // ouverture, aux organisateurs
 const MAIL_REVEAL_GUEST = 'reveal_guest';         // révélation, à un invité
 const MAIL_REVEAL_ORGANIZER = 'reveal_organizer'; // révélation, aux organisateurs
+const MAIL_DELETE_ORGANIZER = 'delete_organizer'; // suppression automatique à venir, aux organisateurs
+const MAIL_DELETE_ADMIN = 'delete_admin';         // suppression automatique à venir, à une adresse de l'administrateur
+
+// Unicité « un message par destinataire » : (event_id, kind, recipient). recipient vaut l'identifiant de l'invité,
+// 0 pour les organisateurs et, pour l'administrateur, le rang de l'adresse dans admin_emails() (1, 2…).
 
 // Attente (en secondes) avant chaque essai, selon le nombre d'essais déjà faits :
 // tout de suite, puis 10 min, 30 min, 2 h, 6 h et 12 h après l'essai précédent. Au sixième échec, abandon.
@@ -399,7 +508,7 @@ function send_due_mails(int $limit = 20, float $seconds = 8.0): void
 
 // Réservation : la date est écrite une seule fois par album, même si deux visites arrivent en même temps.
 // Celle qui l'écrit met les messages en file dans la même transaction : tout est enregistré, ou rien.
-// $column : open_mail_sent_at ou reveal_mail_sent_at.
+// $column : open_mail_sent_at, reveal_mail_sent_at ou delete_warned_at.
 function claim_event_mails(array $event, string $column, callable $queue): void
 {
     $pdo = db();
@@ -414,15 +523,58 @@ function claim_event_mails(array $event, string $column, callable $queue): void
     $pdo->commit();
 }
 
-// Message aux organisateurs : la contrainte d'unicité et le NOT EXISTS interdisent de le mettre deux fois en file.
-function queue_organizer_mail(int $eventId, string $kind): void
+// Message qui ne va pas à un invité : la contrainte d'unicité et le NOT EXISTS interdisent de le mettre deux fois en file.
+// $recipient : 0 pour les organisateurs, rang de l'adresse (à partir de 1) pour l'administrateur.
+function queue_organizer_mail(int $eventId, string $kind, int $recipient = 0): void
 {
     db()->prepare(
         'INSERT INTO mail_queue (event_id, kind, guest_id, recipient, created_at)
-         SELECT e.id, ?, NULL, 0, ? FROM events e
+         SELECT e.id, ?, NULL, ?, ? FROM events e
          WHERE e.id = ?
-           AND NOT EXISTS (SELECT 1 FROM mail_queue q WHERE q.event_id = e.id AND q.kind = ? AND q.recipient = 0)'
-    )->execute([$kind, gmdate('Y-m-d H:i:s'), $eventId, $kind]);
+           AND NOT EXISTS (SELECT 1 FROM mail_queue q WHERE q.event_id = e.id AND q.kind = ? AND q.recipient = ?)'
+    )->execute([$kind, $recipient, gmdate('Y-m-d H:i:s'), $eventId, $kind, $recipient]);
+}
+
+// Retire de la file les avertissements de suppression d'un album : ceux d'une annonce précédente n'ont plus cours.
+// $unsentOnly : garde les messages déjà envoyés (leur date d'envoi est la preuve que le destinataire est prévenu).
+function clear_delete_warning_mails(int $eventId, bool $unsentOnly = false): void
+{
+    db()->prepare(
+        'DELETE FROM mail_queue WHERE event_id = ? AND kind IN (?, ?)' . ($unsentOnly ? ' AND sent_at IS NULL' : '')
+    )->execute([$eventId, MAIL_DELETE_ORGANIZER, MAIL_DELETE_ADMIN]);
+}
+
+// Avertissement de suppression : mis en file trente jours avant l'échéance (tout de suite si elle est plus proche ou
+// dépassée), une fois par album. delete_warned_at note la mise en file ; les sept jours du garde-fou, eux, courent
+// à partir de l'envoi réussi (mail_queue.sent_at, voir delete_warning_sends).
+// Appelé par la tâche planifiée seulement (retention.php). Les erreurs de base remontent à l'appelant.
+function queue_due_delete_warnings(): void
+{
+    // Sans adresse d'administrateur, aucune suppression automatique n'aura lieu : inutile d'en annoncer une.
+    if (admin_emails() === []) {
+        return;
+    }
+    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $events = db()->query(
+        'SELECT * FROM events WHERE closes_at IS NOT NULL AND delete_warned_at IS NULL ORDER BY id'
+    )->fetchAll();
+    foreach ($events as $event) {
+        $due = deletion_due_at($event);
+        if ($due === null || $now < deletion_warning_from($due)) {
+            continue;
+        }
+        claim_event_mails($event, 'delete_warned_at', function () use ($event) {
+            $eventId = (int) $event['id'];
+            // Restes d'une mise en file précédente, jamais partis. Un message déjà envoyé n'est pas renvoyé.
+            clear_delete_warning_mails($eventId, true);
+            if (!empty($event['organizer_email'])) {
+                queue_organizer_mail($eventId, MAIL_DELETE_ORGANIZER);
+            }
+            foreach (admin_emails() as $rank => $address) {
+                queue_organizer_mail($eventId, MAIL_DELETE_ADMIN, $rank + 1);
+            }
+        });
+    }
 }
 
 // Message d'ouverture aux organisateurs, dès que l'heure de début est passée.
@@ -470,7 +622,7 @@ function queue_due_reveal_mails(): void
 }
 
 // Reconstruit un message de la file à partir de l'événement et de l'invité tels qu'ils sont maintenant.
-// Renvoie ['send', adresse, message], ['retry', raison] (trop tôt : nouvel essai plus tard)
+// Renvoie ['send', adresse, message], ['retry', raison] (trop tôt : le message attend son heure, sans compter d'essai)
 // ou ['abandon', raison] (le message n'a plus lieu d'être).
 function queued_mail(array $row): array
 {
@@ -480,6 +632,31 @@ function queued_mail(array $row): array
     if (!$event) {
         return ['abandon', 'événement supprimé'];
     }
+
+    // Avertissement de suppression : il part aussi, et surtout, quand l'album est clôturé.
+    if ($row['kind'] === MAIL_DELETE_ORGANIZER || $row['kind'] === MAIL_DELETE_ADMIN) {
+        $due = deletion_due_at($event);
+        if ($due === null || empty($event['delete_warned_at'])) {
+            return ['abandon', 'avertissement de suppression annulé'];
+        }
+        // Date annoncée : l'échéance, et jamais moins de sept jours après cet envoi. La suppression réelle attend
+        // sept jours après l'envoi réussi de tous les avertissements : elle ne peut pas précéder la date annoncée.
+        $when = max($due, (new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+' . DELETE_GRACE_DAYS . ' days'));
+        if ($row['kind'] === MAIL_DELETE_ORGANIZER) {
+            if (empty($event['organizer_email'])) {
+                return ['abandon', "pas d'adresse d'organisateurs"];
+            }
+            return ['send', $event['organizer_email'], organizer_delete_mail($event, $when)];
+        }
+        $address = admin_emails()[(int) ($row['recipient'] ?? 0) - 1] ?? '';
+        if (!is_string($address) || $address === '') {
+            return ['abandon', "adresse de l'administrateur absente de la configuration"];
+        }
+        $stmt = db()->prepare('SELECT COUNT(*) FROM photos WHERE event_id = ?');
+        $stmt->execute([(int) $event['id']]);
+        return ['send', $address, admin_delete_mail($event, $when, (int) $stmt->fetchColumn())];
+    }
+
     if (is_expired($event)) {
         return ['abandon', 'album clôturé'];
     }
@@ -555,49 +732,74 @@ function flush_mail_queue(int $limit = 20, float $seconds = 8.0): void
     $due[] = '(attempts >= ? AND last_attempt_at <= ?)';
     array_push($params, $max, $date($now - MAIL_RETRY_DELAYS[$max - 1]));
 
-    $stmt = db()->prepare(
-        'SELECT id, event_id, kind, guest_id, attempts FROM mail_queue
-         WHERE sent_at IS NULL AND abandoned_at IS NULL AND (' . implode(' OR ', $due) . ')
-         ORDER BY id LIMIT ' . max(1, $limit)
+    // Lecture par pages, dans l'ordre des identifiants. $limit borne les messages traités (envoyés, en échec ou
+    // abandonnés) : un message « trop tôt » ne compte pas, sinon ceux qui attendent leur heure bloqueraient les autres.
+    $page = max(1, $limit, 200);
+    $select = db()->prepare(
+        'SELECT id, event_id, kind, guest_id, recipient, attempts FROM mail_queue
+         WHERE sent_at IS NULL AND abandoned_at IS NULL AND id > ? AND (' . implode(' OR ', $due) . ')
+         ORDER BY id LIMIT ' . $page
     );
-    $stmt->execute($params);
 
     $started = microtime(true);
-    foreach ($stmt->fetchAll() as $row) {
-        if (microtime(true) - $started > $seconds) {
-            break;
-        }
-        $id = (int) $row['id'];
-        $attempts = (int) $row['attempts'];
-        if ($attempts >= $max) {
-            abandon_queued_mail($id, "$attempts essais sans succès");
-            continue;
-        }
-        // Réservation de l'essai : si deux requêtes prennent le même message, une seule l'envoie.
-        $claim = db()->prepare(
-            'UPDATE mail_queue SET attempts = ?, last_attempt_at = ?
-             WHERE id = ? AND attempts = ? AND sent_at IS NULL AND abandoned_at IS NULL'
-        );
-        $claim->execute([$attempts + 1, $date(time()), $id, $attempts]);
-        if ($claim->rowCount() !== 1) {
-            continue;
-        }
-        $attempts++;
+    $handled = 0;
+    $after = 0;
+    $early = []; // « événement:nature » déjà vus trop tôt pendant ce passage : inutile de reposer la question
+    while (true) {
+        $select->execute([$after, ...$params]);
+        $rows = $select->fetchAll();
+        foreach ($rows as $row) {
+            if ($handled >= max(1, $limit) || microtime(true) - $started > $seconds) {
+                return;
+            }
+            $id = (int) $row['id'];
+            $after = $id;
+            $attempts = (int) $row['attempts'];
+            if ($attempts >= $max) {
+                abandon_queued_mail($id, "$attempts essais sans succès");
+                $handled++;
+                continue;
+            }
+            // Trop tôt (début ou révélation repoussés après la mise en file) : ni échec ni essai. Le message reste
+            // en file tel quel et part au premier passage après son heure, même si la date est ensuite avancée.
+            $moment = $row['event_id'] . ':' . $row['kind'];
+            if (isset($early[$moment])) {
+                continue;
+            }
+            $result = queued_mail($row);
+            if ($result[0] === 'retry') {
+                $early[$moment] = true;
+                continue;
+            }
+            $handled++;
+            // Réservation de l'essai : si deux requêtes prennent le même message, une seule l'envoie.
+            $claim = db()->prepare(
+                'UPDATE mail_queue SET attempts = ?, last_attempt_at = ?
+                 WHERE id = ? AND attempts = ? AND sent_at IS NULL AND abandoned_at IS NULL'
+            );
+            $claim->execute([$attempts + 1, $date(time()), $id, $attempts]);
+            if ($claim->rowCount() !== 1) {
+                continue;
+            }
+            $attempts++;
 
-        $result = queued_mail($row);
-        if ($result[0] === 'abandon') {
-            abandon_queued_mail($id, $result[1]);
-            continue;
+            if ($result[0] === 'abandon') {
+                abandon_queued_mail($id, $result[1]);
+                continue;
+            }
+            if (send_mail($result[1], $result[2])) {
+                db()->prepare('UPDATE mail_queue SET sent_at = ? WHERE id = ?')->execute([$date(time()), $id]);
+                continue;
+            }
+            $reason = "échec de l'envoi à {$result[1]}";
+            if ($attempts >= $max) {
+                abandon_queued_mail($id, "$attempts essais sans succès, dernier : $reason");
+            } else {
+                error_log("OuiSnap : e-mail $id de la file ({$row['kind']}), essai $attempts sur $max : $reason. Nouvel essai plus tard.");
+            }
         }
-        if ($result[0] === 'send' && send_mail($result[1], $result[2])) {
-            db()->prepare('UPDATE mail_queue SET sent_at = ? WHERE id = ?')->execute([$date(time()), $id]);
-            continue;
-        }
-        $reason = $result[0] === 'send' ? "échec de l'envoi à {$result[1]}" : $result[1];
-        if ($attempts >= $max) {
-            abandon_queued_mail($id, "$attempts essais sans succès, dernier : $reason");
-        } else {
-            error_log("OuiSnap : e-mail $id de la file ({$row['kind']}), essai $attempts sur $max : $reason. Nouvel essai plus tard.");
+        if (count($rows) < $page) {
+            return;
         }
     }
 }

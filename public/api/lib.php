@@ -220,6 +220,125 @@ function is_revealed(array $event): bool
     return $at !== null && new DateTimeImmutable('now') >= $at;
 }
 
+// --- Conservation : suppression automatique des albums ----------------------
+// La politique de confidentialité promet la suppression de chaque album au plus tard six mois après sa clôture.
+// Ici, seulement le calcul des dates : la suppression elle-même n'est faite que par la tâche planifiée (retention.php).
+
+const DELETE_AFTER_MONTHS = 6;   // échéance par défaut : clôture + six mois
+const DELETE_WARNING_DAYS = 30;  // avertissement des organisateurs et de l'administrateur avant l'échéance
+const DELETE_GRACE_DAYS = 7;     // jamais de suppression moins de sept jours après l'avertissement
+
+// Date lue dans la base, au format strict « AAAA-MM-JJ HH:MM:SS » (UTC). Toute autre valeur (vide, date à zéro
+// de MySQL, texte inattendu) donne null : dans le doute, aucune échéance n'est calculée.
+function stored_date(mixed $value): ?DateTimeImmutable
+{
+    if (!is_string($value) || preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value) !== 1) {
+        return null;
+    }
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
+    if ($date === false || $date->format('Y-m-d H:i:s') !== $value || (int) $date->format('Y') < 2020) {
+        return null;
+    }
+    return $date;
+}
+
+// Ajoute des mois sur le calendrier, en UTC, sans déborder sur le mois suivant :
+// 31 août + 6 mois = 28 février (29 les années bissextiles), et non le 3 mars comme le ferait « +6 months » seul.
+function add_months(DateTimeImmutable $date, int $months): DateTimeImmutable
+{
+    $date = $date->setTimezone(new DateTimeZone('UTC'));
+    $month = $date->modify('first day of this month')->modify("+$months months");
+    $day = min((int) $date->format('j'), (int) $month->format('t'));
+    return $month->setDate((int) $month->format('Y'), (int) $month->format('n'), $day);
+}
+
+// Échéance de suppression d'un album : la clôture plus six mois, ou la date choisie par l'administrateur
+// (events.delete_at) si elle est plus proche. Six mois après la clôture est un plafond, promis par la politique de
+// confidentialité : une date choisie plus tardive (l'administration la refuse) est ramenée à ce plafond.
+// Null = jamais de suppression automatique : pas de clôture, date illisible, ou date choisie antérieure à la
+// clôture (l'administration la refuse aussi : valeur inattendue).
+function deletion_due_at(array $event): ?DateTimeImmutable
+{
+    $closes = stored_date($event['closes_at'] ?? null);
+    if ($closes === null) {
+        return null;
+    }
+    $latest = add_months($closes, DELETE_AFTER_MONTHS);
+    $chosen = $event['delete_at'] ?? null;
+    if ($chosen === null || $chosen === '') {
+        return $latest;
+    }
+    $chosen = stored_date($chosen);
+    if ($chosen === null || $chosen < $closes) {
+        return null;
+    }
+    return min($chosen, $latest);
+}
+
+// Début de la période d'avertissement : trente jours avant l'échéance.
+function deletion_warning_from(DateTimeImmutable $due): DateTimeImmutable
+{
+    return $due->modify('-' . DELETE_WARNING_DAYS . ' days');
+}
+
+// Envois RÉUSSIS de l'avertissement de suppression d'un album, lus dans la file d'e-mails (mail_queue.sent_at).
+// first : premier envoi réussi, pour l'affichage. proof : preuve que tout le monde a été prévenu, c'est-à-dire la
+// date à partir de laquelle courent les sept jours du garde-fou : envoi réussi à au moins une adresse de
+// l'administrateur ET, si l'album a une adresse d'organisateurs, envoi réussi aux organisateurs (la plus tardive des
+// deux dates). Null tant que la preuve est incomplète. delete_warned_at, lui, n'est que la date de mise en file.
+function delete_warning_sends(array $event): array
+{
+    $sends = ['first' => null, 'proof' => null];
+    if (empty($event['delete_warned_at']) || (int) ($event['id'] ?? 0) < 1) {
+        return $sends;
+    }
+    $stmt = db()->prepare('SELECT kind, sent_at FROM mail_queue WHERE event_id = ? AND kind IN (?, ?) AND sent_at IS NOT NULL');
+    $stmt->execute([(int) $event['id'], MAIL_DELETE_ORGANIZER, MAIL_DELETE_ADMIN]);
+    $admin = null;
+    $organizer = null;
+    foreach ($stmt->fetchAll() as $row) {
+        $sent = stored_date($row['sent_at']);
+        if ($sent === null) {
+            continue;
+        }
+        $sends['first'] = $sends['first'] === null ? $sent : min($sends['first'], $sent);
+        if ($row['kind'] === MAIL_DELETE_ADMIN) {
+            $admin = $admin === null ? $sent : min($admin, $sent);
+        } elseif ($row['kind'] === MAIL_DELETE_ORGANIZER) {
+            $organizer = $sent;
+        }
+    }
+    if ($admin !== null && (empty($event['organizer_email']) || $organizer !== null)) {
+        $sends['proof'] = $organizer === null ? $admin : max($admin, $organizer);
+    }
+    return $sends;
+}
+
+// Date à laquelle l'album sera réellement supprimé, au plus tôt : l'échéance, mais jamais moins de sept jours après
+// l'envoi réussi de l'avertissement (ou après maintenant, tant qu'il n'est pas parti). $sends : résultat de
+// delete_warning_sends(), relu dans la file s'il n'est pas fourni. File illisible : comme si rien n'était parti.
+function deletion_at(array $event, ?array $sends = null): ?DateTimeImmutable
+{
+    $due = deletion_due_at($event);
+    if ($due === null) {
+        return null;
+    }
+    try {
+        $sends ??= delete_warning_sends($event);
+    } catch (PDOException) {
+        $sends = ['proof' => null];
+    }
+    $from = $sends['proof'] ?? new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    return max($due, $from->modify('+' . DELETE_GRACE_DAYS . ' days'));
+}
+
+// Vrai dès que l'échéance est à moins de trente jours, ou dépassée.
+function deletion_is_near(array $event): bool
+{
+    $due = deletion_due_at($event);
+    return $due !== null && new DateTimeImmutable('now') >= deletion_warning_from($due);
+}
+
 // Événement reconnu par la clé du lien privé remis aux organisateurs.
 function current_album(): array
 {
@@ -227,8 +346,7 @@ function current_album(): array
     if (is_token($key)) {
         // album_token_hash : anciens albums, dont seule l'empreinte de la clé était gardée.
         $stmt = db()->prepare(
-            'SELECT id, code, title, kind, wedding_date, reveal_at, closes_at
-             FROM events WHERE album_key = ? OR album_token_hash = ?'
+            'SELECT * FROM events WHERE album_key = ? OR album_token_hash = ?'
         );
         $stmt->execute([$key, hash('sha256', $key)]);
         $event = $stmt->fetch();
@@ -343,6 +461,11 @@ function mask_email(string $email): string
 function admin_event_payload(array $event): array
 {
     $int = fn ($value) => $value === null ? null : (int) $value;
+    try {
+        $sends = delete_warning_sends($event);
+    } catch (PDOException) {
+        $sends = ['first' => null, 'proof' => null];
+    }
     return [
         'id' => (int) $event['id'],
         'code' => $event['code'],
@@ -362,6 +485,13 @@ function admin_event_payload(array $event): array
         'expired' => is_expired($event),
         'emails' => (int) ($event['emails'] ?? 0),
         'mailSentAt' => utc($event['reveal_mail_sent_at'] ?? null)?->format(DATE_ATOM),
+        // Suppression automatique : date choisie par l'administrateur, date réelle prévue, proximité, avertissement
+        // (deleteWarnedAt : mise en file ; deleteWarningSentAt : premier envoi réussi, null tant que rien n'est parti).
+        'deleteAt' => stored_date($event['delete_at'] ?? null)?->format(DATE_ATOM),
+        'deletesAt' => deletion_at($event, $sends)?->format(DATE_ATOM),
+        'deleteNear' => deletion_is_near($event),
+        'deleteWarnedAt' => stored_date($event['delete_warned_at'] ?? null)?->format(DATE_ATOM),
+        'deleteWarningSentAt' => $sends['first']?->format(DATE_ATOM),
         'guests' => (int) ($event['guests'] ?? 0),
         'photos' => (int) ($event['photos'] ?? 0),
         'bytes' => (int) ($event['bytes'] ?? 0),
@@ -391,10 +521,30 @@ function save_setting(string $name, string $value): void
 // cronMode : « cli » (lancée par l'hébergeur) ou « web » (appel de l'adresse de cron.php).
 function admin_status(): array
 {
-    $status = ['cronLastRun' => null, 'cronAge' => null, 'cronMode' => null, 'mailsPending' => 0, 'mailsAbandoned' => 0];
+    $status = [
+        'cronLastRun' => null, 'cronAge' => null, 'cronMode' => null, 'mailsPending' => 0, 'mailsAbandoned' => 0,
+        'autoDeleteLastAt' => null, 'autoDeleteLastTitle' => null, 'autoDeleteCount' => 0,
+        'retentionLastRun' => null, 'retentionAge' => null,
+    ];
     try {
-        $settings = db()->query("SELECT name, value FROM settings WHERE name IN ('cron_last_run', 'cron_last_mode')")
-            ->fetchAll(PDO::FETCH_KEY_PAIR);
+        $settings = db()->query(
+            "SELECT name, value FROM settings WHERE name IN
+               ('cron_last_run', 'cron_last_mode', 'auto_delete_last_at', 'auto_delete_last_title', 'auto_delete_count',
+                'retention_last_run')"
+        )->fetchAll(PDO::FETCH_KEY_PAIR);
+        // Dernier passage où les suppressions automatiques ont réellement été examinées (tâche en ligne de commande).
+        $examined = stored_date($settings['retention_last_run'] ?? null);
+        if ($examined) {
+            $status['retentionLastRun'] = $examined->format(DATE_ATOM);
+            $status['retentionAge'] = max(0, time() - $examined->getTimestamp());
+        }
+        // Dernière suppression automatique d'un album par la tâche planifiée, s'il y en a eu une.
+        $deleted = stored_date($settings['auto_delete_last_at'] ?? null);
+        if ($deleted) {
+            $status['autoDeleteLastAt'] = $deleted->format(DATE_ATOM);
+            $status['autoDeleteLastTitle'] = (string) ($settings['auto_delete_last_title'] ?? '');
+            $status['autoDeleteCount'] = (int) ($settings['auto_delete_count'] ?? 0);
+        }
         $last = utc($settings['cron_last_run'] ?? null);
         if ($last) {
             $status['cronLastRun'] = $last->format(DATE_ATOM);
@@ -415,4 +565,67 @@ function delete_photo_files(int $eventId, string $file): void
 {
     @unlink(photo_path($eventId, $file));
     @unlink(photo_path($eventId, $file, true));
+}
+
+// Suppression définitive d'un événement : ses photos et vignettes sur le disque, l'image de son QR code, puis ses
+// lignes (photos, invités, e-mails en file, événement). Commune à la suppression par l'administrateur et à la
+// suppression automatique de la tâche planifiée. Aucun contrôle de droit ni d'échéance ici : c'est à l'appelant.
+// Renvoie false si l'album n'a pas pu être supprimé en entier : ses lignes sont alors toutes conservées, et le
+// journal dit ce qui a déjà été effacé du disque.
+function delete_event(array $event): bool
+{
+    $id = (int) ($event['id'] ?? 0);
+    if ($id < 1) {
+        error_log('OuiSnap : suppression refusée, identifiant d\'événement invalide.');
+        return false;
+    }
+
+    // Fichiers d'abord : le dossier de l'événement (nommé par son identifiant) ne contient que ses photos et leurs vignettes.
+    $dir = storage_dir() . '/' . $id;
+    $remaining = 0;
+    $erased = 0;
+    if (is_dir($dir)) {
+        foreach (scandir($dir) ?: [] as $file) {
+            if ($file === '.' || $file === '..') {
+                continue;
+            }
+            @unlink("$dir/$file") ? $erased++ : $remaining++;
+        }
+        @rmdir($dir);
+        clearstatcache();
+    }
+    // Dossier encore là (fichier ou dossier impossible à effacer, liste illisible) : pas de photos orphelines sans trace.
+    if ($remaining > 0 || is_dir($dir)) {
+        error_log(
+            "OuiSnap : album $id non supprimé, son dossier $dir n'a pas pu être effacé ($remaining fichier(s) restant(s), "
+            . "$erased déjà effacé(s) du disque). Ses lignes sont conservées dans la base."
+        );
+        return false;
+    }
+
+    // Le code sert de nom de fichier : il n'est utilisé que s'il a la forme d'un code.
+    $code = (string) ($event['code'] ?? '');
+    if (preg_match('/^[A-Za-z0-9]{1,16}$/', $code) === 1) {
+        @unlink(qr_path($code));
+    }
+
+    // Lignes : toutes ou aucune. Les e-mails en file partent avec l'événement et ses invités (clés étrangères en cascade).
+    $pdo = db();
+    try {
+        $pdo->beginTransaction();
+        $pdo->prepare('DELETE FROM photos WHERE event_id = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM guests WHERE event_id = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM events WHERE id = ?')->execute([$id]);
+        $pdo->commit();
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log(
+            "OuiSnap : album $id non supprimé de la base (" . $e->getMessage() . "). Ses fichiers de photos ($erased) et "
+            . 'son QR code sont déjà effacés du disque ; toutes ses lignes sont conservées.'
+        );
+        return false;
+    }
+    return true;
 }

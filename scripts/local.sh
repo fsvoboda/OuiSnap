@@ -16,7 +16,10 @@ DATA="$DATA" php -r '
   $pdo = new PDO("sqlite:$data/dev.sqlite");
   // Base créée avant l ajout d une colonne : CREATE TABLE IF NOT EXISTS ne la modifie pas.
   // À faire avant le fichier SQL, dont les index portent sur ces colonnes.
-  $added = ["photos" => ["client_id" => "TEXT NULL"]];
+  $added = [
+    "photos" => ["client_id" => "TEXT NULL"],
+    "events" => ["delete_at" => "TEXT NULL", "delete_warned_at" => "TEXT NULL"],
+  ];
   foreach ($added as $table => $columns) {
     $present = array_column($pdo->query("PRAGMA table_info($table)")->fetchAll(PDO::FETCH_ASSOC), "name");
     if ($present === []) continue; // base neuve : le fichier SQL crée tout

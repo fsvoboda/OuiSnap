@@ -69,6 +69,25 @@ function MailStatus({ status }: { status: AdminStatus }) {
           {plural(status.mailsAbandoned)}
         </p>
       )}
+      {status.cronAge !== null &&
+        (status.retentionAge === null || status.retentionAge === undefined ? (
+          <p className="text-[#f0a39e]">
+            Suppressions automatiques : jamais examinées. Elles ne le sont que si l&apos;hébergeur
+            lance la tâche planifiée en ligne de commande.
+          </p>
+        ) : status.retentionAge > 2 * 3600 ? (
+          <p className="text-[#f0a39e]">
+            Suppressions automatiques : aucun examen depuis {duration(status.retentionAge)}.
+          </p>
+        ) : (
+          <p>Suppressions automatiques : examinées il y a {duration(status.retentionAge)}.</p>
+        ))}
+      {status.autoDeleteLastAt && (
+        <p className="break-words">
+          Dernière suppression automatique : « {status.autoDeleteLastTitle} », le{" "}
+          {formatDay(status.autoDeleteLastAt)}.
+        </p>
+      )}
     </div>
   );
 }
@@ -363,6 +382,22 @@ export function AdminApp() {
                       {event.maxPhotos === null ? "illimité" : `${event.maxPhotos} (+5 avec e-mail)`}
                     </dd>
                   </div>
+                  {event.deletesAt && (
+                    <div className="sm:col-span-3">
+                      <dt className="text-brume">Suppression des photos</dt>
+                      <dd className={event.deleteNear ? "text-[#f0a39e]" : undefined}>
+                        {formatDay(event.deletesAt)}
+                        {event.deleteAt || event.deleteNear ? "" : " (six mois après la clôture)"}
+                        {event.deleteWarningSentAt
+                          ? `, avertissement envoyé le ${formatDay(event.deleteWarningSentAt)}`
+                          : event.deleteWarnedAt
+                            ? ", avertissement en attente d'envoi"
+                            : event.deleteNear
+                            ? ", avertissement au prochain passage de la tâche planifiée"
+                            : ""}
+                      </dd>
+                    </div>
+                  )}
                   <div className="sm:col-span-3">
                     <dt className="text-brume">Organisateurs</dt>
                     <dd className="break-all">
