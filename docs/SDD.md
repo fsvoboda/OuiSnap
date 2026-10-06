@@ -4,7 +4,7 @@
 |---|---|
 | Projet | OuiSnap |
 | Document | Solution Design Document (conception technique) |
-| État du code décrit | branche `main`, file d'attente des e-mails et état de la tâche planifiée compris (commit `3ffab4e`, mis en ligne le 6 octobre 2026) |
+| État du code décrit | branche `main`, file d'attente des e-mails, état de la tâche planifiée, suppression automatique des albums et des demandes de la vitrine compris (migration `017_auto_delete.sql`, mis en ligne le 6 octobre 2026) |
 | Rédigé le | 4 octobre 2026, mis à jour le 6 octobre 2026 |
 
 ## Sommaire
@@ -173,7 +173,7 @@ OuiSnap-1/
 │   ├── PDD.md              processus métier
 │   └── SDD.md              ce document
 ├── database/
-│   ├── 001_… à 015_….sql   migrations MySQL, appliquées dans l'ordre
+│   ├── 001_… à 017_….sql   migrations MySQL, appliquées dans l'ordre
 │   └── local.sqlite.sql    schéma SQLite pour les tests locaux (mis à niveau par scripts/local.sh)
 ├── scripts/
 │   ├── deploy.sh           compile et envoie le site chez OVH
@@ -184,9 +184,10 @@ OuiSnap-1/
 │   ├── robots.txt, sitemap.xml
 │   ├── media/              vidéo de présentation et captures de la vitrine
 │   └── api/                API PHP
-│       ├── .htaccess       interdit l'accès web aux fichiers internes
+│       ├── .htaccess       interdit l'accès web aux fichiers internes (config, lib, mail, retention)
 │       ├── lib.php         fonctions communes
-│       ├── mail.php        gabarits et envoi des e-mails
+│       ├── mail.php        gabarits, envoi et file d'attente des e-mails
+│       ├── retention.php   suppression automatique des albums et des demandes (tâche planifiée seulement)
 │       ├── config.example.php
 │       └── *.php           un fichier par endpoint
 ├── src/
@@ -237,9 +238,9 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 | `GuestApp` | `src/components/guest/guest-app.tsx` | Chef d'orchestre de l'appli invité : connexion à l'album (avec nouvelles tentatives si la page est rouverte sans réseau), écran « Connecté ! », lecture de l'état de la file d'envoi et textes de statut, bascule entre appareil photo et « Mes photos », écrans d'attente et de clôture |
 | `Camera` | `src/components/guest/camera.tsx` | Appareil photo : flux vidéo, zoom, changement de caméra, déclenchement, import depuis la galerie |
 | `MyPhotos` | `src/components/guest/my-photos.tsx` | Grille des photos de l'invité, agrandissement, suppression, coups de cœur reçus ; en lecture seule, affiche aussi le message des photos restées sur le téléphone (propriété `notice`) |
-| `AlbumApp` | `src/components/album/album-app.tsx` | Album des organisateurs : compte à rebours et compteurs avant la révélation ; ensuite photos par invité, coups de cœur, téléchargement ZIP |
-| `AdminApp` | `src/components/admin/admin-app.tsx` | Connexion, liste des événements, suppression d'un événement, demande de lien « mot de passe oublié » |
-| `EventForm` | `src/components/admin/event-form.tsx` | Création et modification d'un événement ; propose la révélation (lendemain 12h00) et la clôture (deux semaines après le début) |
+| `AlbumApp` | `src/components/album/album-app.tsx` | Album des organisateurs : compte à rebours et compteurs avant la révélation ; ensuite photos par invité, coups de cœur, téléchargement ZIP ; ligne d'avertissement quand `deletesAt` est renseigné (suppression à moins de trente jours) |
+| `AdminApp` | `src/components/admin/admin-app.tsx` | Connexion, liste des événements (dont la ligne « Suppression des photos » de chaque carte et, dans `MailStatus`, l'examen des suppressions automatiques), suppression d'un événement, demande de lien « mot de passe oublié » |
+| `EventForm` | `src/components/admin/event-form.tsx` | Création et modification d'un événement ; propose la révélation (lendemain 12h00) et la clôture (deux semaines après le début) ; champ « Suppression » borné entre la clôture et six mois après (`sixMonthsLater`) |
 | `EventLinks`, `QrCase`, `CopyRow` | `src/components/admin/event-links.tsx` | Bloc « QR code et liens ». `EventLinks` affiche deux cases `QrCase` côte à côte (invités, puis organisateurs si l'événement a une clé d'album) puis deux lignes `CopyRow`. Chaque `QrCase` montre l'image du QR code (`imageQr`, avec le bandeau « ALBUM PRIVÉ » pour la case privée), un bouton PDF (« Préparation… » pendant la création, message d'erreur si elle échoue) et un lien de téléchargement du code seul (`ouisnap-qr-<code>.png`, `ouisnap-qr-organisateurs-<code>.png`). `CopyRow` : lien sélectionnable, bouton de copie et bouton qui l'ouvre dans un nouvel onglet (`target="_blank"`, `rel="noopener noreferrer"`). Le PDF et l'image se fabriquent dans le navigateur (voir [5.9](#59-cartes-imprimables)). |
 | `AlbumView` | `src/components/admin/album-view.tsx` | Toutes les photos d'un album pour l'administrateur, avec suppression. Ouvrir une photo ajoute une étape à l'historique du navigateur (`pushState`), pour que le retour arrière ramène à la galerie au lieu de quitter l'administration |
 | `PasswordReset` | `src/components/admin/password-reset.tsx` | Choix d'un nouveau mot de passe depuis le lien reçu |
@@ -507,7 +508,7 @@ Codes d'erreur communs :
 
 ### 6.2 Endpoints
 
-23 endpoints. « Jeton » : champ `token` contenant le jeton de l'invité. « Clé » : champ `token` contenant la clé de l'album. « Session admin » : cookie `ouisnap_admin`.
+23 endpoints (plus `retention.php`, qui n'en est pas un : il est inclus par `cron.php` et interdit d'accès web). « Jeton » : champ `token` contenant le jeton de l'invité. « Clé » : champ `token` contenant la clé de l'album. « Session admin » : cookie `ouisnap_admin`.
 
 #### Invités
 
@@ -540,12 +541,12 @@ Les trois usages de `join.php` :
 
 | Fichier | Rôle | Accès | Entrées | Réponse | Erreurs propres |
 |---|---|---|---|---|---|
-| `album.php` | État de l'album | Clé | `token` | `title`, `kind`, `code`, `revealAt`, `revealed`, `total`, `guests` (`name`, `count`) ; après la révélation seulement : `photos` (`id`, `width`, `height`, `guest`, `liked`, `name`) | — |
+| `album.php` | État de l'album | Clé | `token` | `title`, `kind`, `code`, `revealAt`, `revealed`, `closesAt`, `deletesAt` (voir ci-dessous), `total`, `guests` (`name`, `count`) ; après la révélation seulement : `photos` (`id`, `width`, `height`, `guest`, `liked`, `name`) | — |
 | `album-photo.php` | Image d'une photo de l'album | Clé, album dévoilé | `token`, `id`, `size` | Image JPEG | 403 `locked`, 404 `photo` |
 | `album-like.php` | Poser ou retirer un coup de cœur | Clé, album dévoilé | `token`, `id`, `liked` (`1` ou autre) | `liked` | 403 `locked`, 404 `photo` |
 | `album-zip.php` | Télécharger tout l'album | Clé, album dévoilé | `token` | Archive ZIP `album-<nom>.zip` | 403 `locked`, 404 `empty`, 413 `size` (plus de 4 Go ou de 65 535 fichiers) |
 
-Les quatre passent par `current_album()` : 404 `album` si la clé est inconnue, 410 `expired` si l'album est clôturé.
+Les quatre passent par `current_album()` : 404 `album` si la clé est inconnue, 410 `expired` si l'album est clôturé. `current_album()` lit désormais toutes les colonnes de l'événement (`SELECT *`) : `album.php` en tire les dates de suppression. `closesAt` : la clôture, en ISO 8601 (ou `null`). `deletesAt` : la date réelle de suppression au plus tôt (`deletion_at()`, [8.5](#85-conservation-et-suppression-automatique)) quand l'échéance est à moins de trente jours (`deletion_is_near()`), sinon `null`. Le calcul ne fait pas de requête sur `events` ; il lit seulement la file d'e-mails pour la preuve d'envoi.
 
 #### Administration
 
@@ -556,16 +557,16 @@ Les quatre passent par `current_album()` : 404 `album` si la clé est inconnue, 
 | `admin-forgot.php` | Envoyer le lien de réinitialisation | Public | aucune | `sentTo` (adresses masquées) | 503 `config`, 429 `locked`, 500 `mail` |
 | `admin-reset.php` | Vérifier le lien, ou choisir le nouveau mot de passe | Jeton du lien | `token` seul (vérification) ; ou `token`, `password`, `confirm` | `ok` | 410 `link`, 422 `invalid` |
 | `admin-events.php` | Lister les événements avec leurs compteurs, et donner l'état de l'envoi des e-mails | Session admin | aucune | `events` (voir `admin_event_payload()`), `status` (voir ci-dessous) | — |
-| `admin-event-save.php` | Créer (sans `id`) ou modifier (avec `id`) un événement | Session admin | `id`, `title`, `kind`, `organizerName`, `organizerEmail`, `startsAt`, `revealAt`, `closesAt`, `maxGuests`, `maxPhotos` | `event` | 422 `invalid`, 404 `event` |
-| `admin-event-delete.php` | Supprimer un événement, ses invités, ses photos et son QR code | Session admin | `id` | `ok` | 404 `event`, 500 `server` (fichiers non supprimés : l'album est conservé) |
+| `admin-event-save.php` | Créer (sans `id`) ou modifier (avec `id`) un événement | Session admin | `id`, `title`, `kind`, `organizerName`, `organizerEmail`, `startsAt`, `revealAt`, `closesAt`, `deleteAt` (facultatif), `maxGuests`, `maxPhotos` | `event` | 422 `invalid`, 404 `event` |
+| `admin-event-delete.php` | Supprimer un événement, ses invités, ses photos et son QR code (par `delete_event()`, comme la suppression automatique) | Session admin | `id` | `ok` | 404 `event`, 500 `server` (fichiers ou lignes non supprimés : l'album est conservé) |
 | `admin-event-qr.php` | Déposer l'image du QR code d'un événement | Session admin | `id`, fichier `qr` (PNG, 512 Ko au plus) | `ok` | 404 `event`, 400 `upload`, 415 `format`, 500 `server` |
 | `admin-album.php` | Lister les photos d'un album, même avant la révélation | Session admin | `id` | `photos` | — |
 | `admin-photo.php` | Image d'une photo | Session admin | `id`, `size` | Image JPEG | 404 `photo` |
 | `admin-photo-delete.php` | Supprimer une photo, à tout moment | Session admin | `id` | `ok` | 404 `photo` |
 
-Règles de `admin-event-save.php` : nom de l'album obligatoire (120 caractères au plus) ; nature parmi `mariage`, `bapteme`, `anniversaire`, `autre` ; nom (80 caractères au plus) et e-mail des organisateurs obligatoires ; début et révélation obligatoires ; révélation après le début ; clôture, si elle est donnée, après la révélation ; limites entre 1 et 65 535, ou vides pour « illimité ». À la création, le serveur tire un code de 8 caractères (alphabet sans `O`, `0`, `I`, `1`) et une clé d'album de 48 caractères hexadécimaux.
+Règles de `admin-event-save.php` : nom de l'album obligatoire (120 caractères au plus) ; nature parmi `mariage`, `bapteme`, `anniversaire`, `autre` ; nom (80 caractères au plus) et e-mail des organisateurs obligatoires ; début et révélation obligatoires ; révélation après le début ; clôture, si elle est donnée, après la révélation ; limites entre 1 et 65 535, ou vides pour « illimité ». Date de suppression `deleteAt` (même format que `closesAt`, fin du jour choisi), facultative, lue par `posted_date()` : refusée en 422 `invalid` sans clôture (« La suppression automatique demande une date de clôture… »), avant la clôture (« La suppression ne peut pas avoir lieu avant la clôture. »), ou plus de six mois après (« …plus de six mois après la clôture. Pour garder l'album plus longtemps, repoussez sa date de clôture. »). Le plafond se compare au jour près, en UTC, à `add_months($closes, DELETE_AFTER_MONTHS)` : le formulaire envoie la fin du jour local, qui peut dépasser d'une heure le plafond exact au changement d'heure ; `deletion_due_at()` ramène de toute façon la date au plafond. En **modification**, lecture de l'événement, décision et `UPDATE` se font dans une seule transaction (`beginTransaction`/`commit`, `rollBack` sur toute exception, 404 `event` si l'id n'existe pas) : si `delete_warned_at` n'est pas nul, il est remis à `NULL` dans le même `UPDATE`, et les lignes non envoyées de `mail_queue` des natures `delete_organizer` et `delete_admin` sont supprimées (`clear_delete_warning_mails($id)`, sans l'option qui garderait les envoyées : toutes partent), quand la nouvelle échéance (`deletion_due_at()` sur les valeurs saisies) est `null`, ou à plus de trente jours (`now < deletion_warning_from($newDue)`), ou antérieure à l'ancienne, ou quand l'adresse des organisateurs (minuscules, espaces retirés) change. À la création, `delete_at` est inséré avec l'événement ; `delete_warned_at` reste nul ; le serveur tire un code de 8 caractères (alphabet sans `O`, `0`, `I`, `1`) et une clé d'album de 48 caractères hexadécimaux.
 
-`admin-events.php` fait trois choses en plus de lister : il attribue une clé aux anciens albums qui n'en avaient pas en clair, il déclenche l'envoi des e-mails en attente (`send_due_mails()`, avant la lecture de l'état), et il renvoie `status`, fabriqué par `admin_status()` (`lib.php`) :
+`admin-events.php` lit les événements par `SELECT e.*` : les colonnes `delete_at` et `delete_warned_at` arrivent donc sans changement de ce fichier, et `admin_event_payload()` en tire les champs de suppression (voir ci-dessous). Il fait trois choses en plus de lister : il attribue une clé aux anciens albums qui n'en avaient pas en clair, il déclenche l'envoi des e-mails en attente (`send_due_mails()`, avant la lecture de l'état), et il renvoie `status`, fabriqué par `admin_status()` (`lib.php`) :
 
 | Champ de `status` | Contenu |
 |---|---|
@@ -574,6 +575,13 @@ Règles de `admin-event-save.php` : nom de l'album obligatoire (120 caractères 
 | `cronMode` | `cli` (lancée par l'hébergeur) ou `web` (appel de l'adresse de `cron.php`) ; `null` si jamais passée |
 | `mailsPending` | Nombre de lignes de `mail_queue` ni envoyées ni abandonnées (y compris celles pas encore essayées) |
 | `mailsAbandoned` | Nombre de lignes abandonnées (ne baisse qu'à la suppression de l'événement) |
+| `retentionLastRun` | Dernier passage où les suppressions d'albums ont réellement été examinées (réglage `retention_last_run`), ISO 8601 ; `null` si jamais |
+| `retentionAge` | Secondes écoulées depuis, à l'horloge du serveur ; `null` si jamais |
+| `autoDeleteLastAt` | Date de la dernière suppression automatique d'un album ; `null` s'il n'y en a pas eu |
+| `autoDeleteLastTitle` | Titre de l'album supprimé à cette occasion |
+| `autoDeleteCount` | Nombre total d'albums supprimés automatiquement (0 si aucun) |
+
+Champs ajoutés à chaque élément de `events` par `admin_event_payload()` : `deleteAt` (date choisie par l'administrateur, `null` si vide), `deletesAt` (date réelle de suppression au plus tôt, `null` sans échéance), `deleteNear` (échéance à moins de trente jours ou dépassée), `deleteWarnedAt` (mise en file du préavis, `null` tant qu'il n'est pas en file), `deleteWarningSentAt` (premier envoi réussi d'un message de préavis, `null` tant que rien n'est parti). La lecture de la file est protégée : sur `PDOException`, comme si rien n'était parti.
 
 Si la lecture échoue (table `mail_queue` absente, par exemple), `admin_status()` note l'erreur dans le journal et renvoie les valeurs lues jusque-là : la liste des événements s'affiche quand même. Le front (`MailStatus` dans `src/components/admin/admin-app.tsx`, type `AdminStatus` dans `types.ts`) affiche le bloc au-dessus de la liste ; il traite `status` comme facultatif.
 
@@ -583,7 +591,7 @@ Si la lecture échoue (table `mail_queue` absente, par exemple), `admin_status()
 |---|---|---|---|---|---|
 | `contact.php` | Enregistrer une demande de la vitrine et la transmettre par e-mail | Public | `name`, `email`, `kind`, `date` (facultative, `AAAA-MM-JJ`), `message` (facultatif, coupé à 2000 caractères), `site` (champ piège) | `ok` | 422 `invalid` |
 | `qr.php` | Image du QR code d'un événement, pour les e-mails | Public, `GET` | `c` dans l'adresse | Image PNG, en cache 24 h | 404 sans corps |
-| `cron.php` | Noter son passage, puis mettre en file et envoyer les e-mails en attente | Public, toute méthode | aucune | Réponse vide | — (voir [9.5](#95-tâche-planifiée)) |
+| `cron.php` | Noter son passage ; en ligne de commande, appliquer les durées de conservation ([8.5](#85-conservation-et-suppression-automatique)) ; puis mettre en file et envoyer les e-mails en attente | Public, toute méthode (la conservation, seulement en ligne de commande) | aucune | Réponse vide | — (voir [9.5](#95-tâche-planifiée)) |
 
 Si le champ piège `site` de `contact.php` est rempli, l'API répond `ok` sans rien enregistrer.
 
@@ -652,6 +660,8 @@ erDiagram
     date wedding_date
     datetime starts_at
     datetime closes_at
+    datetime delete_at
+    datetime delete_warned_at
     datetime open_mail_sent_at
     datetime reveal_at
     datetime reveal_mail_sent_at
@@ -749,6 +759,8 @@ Dix tables en production : neuf créées par les migrations, plus `migrations`, 
 | `wedding_date` | DATE, nul possible | Ancienne date de l'événement. N'est plus écrite par l'administration ; sert seulement de repli pour la révélation. |
 | `starts_at` | DATETIME (UTC), nul possible | Début : pas d'envoi avant |
 | `closes_at` | DATETIME (UTC), nul possible | Clôture. Nul = jamais. |
+| `delete_at` | DATETIME (UTC), nul possible | Date de suppression choisie par l'administrateur (migration 017). Nul = six mois après la clôture. Jamais plus tard que ce plafond. |
+| `delete_warned_at` | DATETIME (UTC), nul possible | Mise en file du préavis de suppression (migration 017) : une fois par annonce. Nul = pas encore annoncé. Ce n'est pas la preuve d'un envoi : celle-ci se lit dans `mail_queue.sent_at`. |
 | `open_mail_sent_at` | DATETIME (UTC), nul possible | Réservation du message d'ouverture : date à laquelle il a été mis en file. Nul = pas encore traité. L'envoi lui-même se lit dans `mail_queue`. |
 | `reveal_at` | DATETIME (UTC), nul possible | Révélation |
 | `reveal_mail_sent_at` | DATETIME (UTC), nul possible | Réservation des messages de révélation : date à laquelle ils ont été mis en file. Nul = pas encore traité. L'envoi lui-même se lit dans `mail_queue`. |
@@ -794,13 +806,17 @@ Clé unique `photos_guest_client (guest_id, client_id)` : un même envoi reçu d
 
 #### `settings` — réglages modifiables depuis l'appli
 
-`name` (clé primaire), `value`, `updated_at`. Trois lignes sont utilisées aujourd'hui :
+`name` (clé primaire), `value`, `updated_at`. Huit lignes sont utilisées aujourd'hui :
 
 | `name` | `value` | Écrite par |
 |---|---|---|
 | `admin_password_hash` | Empreinte du mot de passe choisi par « Mot de passe oublié ? » | `admin-reset.php` |
 | `cron_last_run` | Date UTC (`AAAA-MM-JJ HH:MM:SS`) du dernier passage de la tâche planifiée | `cron.php`, par `save_setting()` |
 | `cron_last_mode` | `cli` ou `web` : qui a lancé ce passage | `cron.php`, par `save_setting()` |
+| `retention_last_run` | Date UTC du dernier passage où l'examen des suppressions d'albums (`delete_due_events`) est allé au bout, sans exception | `retention.php` |
+| `auto_delete_count` | Nombre d'albums supprimés automatiquement, depuis la première suppression | `retention.php`, après chaque suppression |
+| `auto_delete_last_title` | Titre du dernier album supprimé automatiquement | `retention.php` |
+| `auto_delete_last_at` | Date UTC de cette suppression | `retention.php` |
 
 `save_setting($name, $value)` (`lib.php`) fait un `UPDATE`, puis un `INSERT` si aucune ligne n'a été modifiée (réglage absent, ou déjà à cette valeur : MySQL ne compte que les lignes changées). Un `INSERT` refusé pour doublon (SQLSTATE `23000`, course avec un autre passage) est ignoré ; toute autre erreur remonte.
 
@@ -812,7 +828,7 @@ Clé unique `photos_guest_client (guest_id, client_id)` : un même envoi reçu d
 
 `id`, `token_hash` (SHA-256 du jeton, unique), `ip`, `created_at` (indexé), `expires_at`, `used_at` (nul = lien encore utilisable). Les lignes de plus de 24 heures sont effacées à chaque nouvelle demande.
 
-#### `mail_queue` — file d'attente des e-mails d'ouverture et de révélation
+#### `mail_queue` — file d'attente des e-mails d'ouverture, de révélation et de préavis de suppression
 
 Une ligne par message à envoyer. Le corps n'est pas gardé : il est reconstruit à chaque essai.
 
@@ -820,9 +836,9 @@ Une ligne par message à envoyer. Le corps n'est pas gardé : il est reconstruit
 |---|---|---|
 | `id` | INT, clé primaire | Identifiant ; l'ordre des `id` est l'ordre d'envoi |
 | `event_id` | INT, clé étrangère vers `events`, cascade | Événement |
-| `kind` | VARCHAR(20) | `open_organizer`, `reveal_guest` ou `reveal_organizer` |
+| `kind` | VARCHAR(20) | `open_organizer`, `reveal_guest`, `reveal_organizer`, `delete_organizer` (préavis aux organisateurs, 16 caractères) ou `delete_admin` (préavis à une adresse de l'administrateur) |
 | `guest_id` | INT, nul possible, clé étrangère vers `guests`, cascade | Invité destinataire ; nul pour les organisateurs |
-| `recipient` | INT, défaut 0 | `guest_id`, ou 0 pour les organisateurs. Sert à l'unicité : MySQL admet plusieurs `NULL` dans une clé unique, donc `guest_id` seul ne l'assurerait pas pour les organisateurs. |
+| `recipient` | INT, défaut 0 | `guest_id`, ou 0 pour les organisateurs ; pour `delete_admin`, le rang de l'adresse dans `admin_emails()` (1, 2…). Sert à l'unicité : MySQL admet plusieurs `NULL` dans une clé unique, donc `guest_id` seul ne l'assurerait pas pour les organisateurs. |
 | `attempts` | TINYINT, défaut 0 | Essais déjà faits (réservés avant l'envoi) |
 | `last_attempt_at` | DATETIME (UTC), nul possible | Date du dernier essai |
 | `sent_at` | DATETIME (UTC), nul possible | Envoi réussi |
@@ -861,6 +877,7 @@ Fichiers de [`../database/`](../database/), appliqués dans l'ordre de leur nom.
 | `014_password_reset.sql` | Tables `settings` et `admin_password_resets` |
 | `015_photo_client_id.sql` | `photos.client_id` (CHAR(32), jeu de caractères `ascii`, comparaison `ascii_bin`, nul possible) et clé unique `photos_guest_client (guest_id, client_id)`. Une seule instruction `ALTER TABLE`. L'ancien `upload.php` nomme ses colonnes : la colonne en plus ne le gêne pas, donc la migration peut passer avant le déploiement. |
 | `016_mail_queue.sql` | Table `mail_queue`, avec sa clé unique, ses deux index et ses deux clés étrangères. `CREATE TABLE IF NOT EXISTS`, une seule instruction. L'ancien code ne la connaît pas : la migration peut passer avant le déploiement. |
+| `017_auto_delete.sql` | `events.delete_at` et `events.delete_warned_at` (DATETIME nuls, après `closes_at`). Une seule instruction `ALTER TABLE … ADD COLUMN` pour les deux. **Doit passer avant le déploiement** : le nouveau `admin-event-save.php` écrit `delete_at` à chaque enregistrement d'événement (voir [13.1](#131-procédure)). |
 
 Les migrations 002, 003 et 005 contiennent des données de démonstration. Sur une base neuve, elles créent un événement `DEMO2026` en production : le supprimer depuis l'administration s'il n'est pas voulu.
 
@@ -877,7 +894,7 @@ Les migrations 002, 003 et 005 contiennent des données de démonstration. Sur u
 | Index | Index sur `guests.event_id`, `photos.guest_id`, `photos.event_id`, `admin_login_attempts.failed_at` | Seulement les index uniques, celui de `admin_password_resets.created_at` et ceux de `mail_queue` (`mail_queue_guest`, `mail_queue_pending`) |
 | Données de départ | `DEMO2026` | `DEMO2026` (aujourd'hui, pas encore révélé) et `PASSE2026` (révélé) |
 
-Conséquence pratique : **toute migration MySQL doit être reportée à la main dans `local.sqlite.sql`**, sinon l'appli locale ne correspond plus à la production. `CREATE TABLE IF NOT EXISTS` ne modifie pas une table existante : pour une colonne ajoutée, la base locale déjà créée est mise à niveau par `scripts/local.sh`, qui lit le tableau `$added` (table, colonne, type) dans son bloc `php -r` et lance `ALTER TABLE … ADD COLUMN` pour chaque colonne absente (`PRAGMA table_info`). Cette mise à niveau passe **avant** l'exécution de `local.sqlite.sql`, sinon le `CREATE UNIQUE INDEX` de la colonne neuve échouerait sur une base ancienne et arrêterait le script. Pour `photos.client_id`, `local.sqlite.sql` porte `client_id TEXT NULL` dans la table et `CREATE UNIQUE INDEX IF NOT EXISTS photos_guest_client ON photos (guest_id, client_id)` après elle ; `$added` contient `["photos" => ["client_id" => "TEXT NULL"]]`. Piège : le bloc `php -r '…'` est entouré d'apostrophes shell ; **aucune apostrophe n'y est permise, même en commentaire**. Une base neuve (aucune colonne présente) est ignorée par la mise à niveau : le fichier SQL crée tout. Pour repartir de zéro, supprimer `.local/dev.sqlite`.
+Conséquence pratique : **toute migration MySQL doit être reportée à la main dans `local.sqlite.sql`**, sinon l'appli locale ne correspond plus à la production. `CREATE TABLE IF NOT EXISTS` ne modifie pas une table existante : pour une colonne ajoutée, la base locale déjà créée est mise à niveau par `scripts/local.sh`, qui lit le tableau `$added` (table, colonne, type) dans son bloc `php -r` et lance `ALTER TABLE … ADD COLUMN` pour chaque colonne absente (`PRAGMA table_info`). Cette mise à niveau passe **avant** l'exécution de `local.sqlite.sql`, sinon le `CREATE UNIQUE INDEX` de la colonne neuve échouerait sur une base ancienne et arrêterait le script. Pour `photos.client_id`, `local.sqlite.sql` porte `client_id TEXT NULL` dans la table et `CREATE UNIQUE INDEX IF NOT EXISTS photos_guest_client ON photos (guest_id, client_id)` après elle ; `$added` contient `["photos" => ["client_id" => "TEXT NULL"], "events" => ["delete_at" => "TEXT NULL", "delete_warned_at" => "TEXT NULL"]]` (la migration 017 est reportée de la même façon : colonnes dans `events` de `local.sqlite.sql`, entrée dans `$added`). Piège : le bloc `php -r '…'` est entouré d'apostrophes shell ; **aucune apostrophe n'y est permise, même en commentaire**. Une base neuve (aucune colonne présente) est ignorée par la mise à niveau : le fichier SQL crée tout. Pour repartir de zéro, supprimer `.local/dev.sqlite`.
 
 Le code PHP n'emploie que du SQL commun aux deux moteurs. Le seul test du moteur est dans `db()`, pour le `PRAGMA`.
 
@@ -913,8 +930,8 @@ Seule exception : le QR code (`qr.php`), public, parce qu'il doit s'afficher dan
 - Avant envoi, le navigateur réduit la photo à 2560 px et la recompresse en JPEG.
 - À la réception, le serveur vérifie le fichier ([10.6](#106-validation-des-envois-de-fichiers)), le range, crée la vignette, puis insère la ligne en base.
 - Suppression d'une photo (invité ou administrateur) : ligne supprimée, puis fichier et vignette.
-- Suppression d'un événement : les fichiers d'abord, puis la base. Si un fichier résiste, l'opération s'arrête et l'album est conservé.
-- La clôture ne supprime rien : les photos d'un album clôturé restent sur le serveur jusqu'à sa suppression depuis l'administration.
+- Suppression d'un événement (par l'administrateur ou automatique) : `delete_event()` efface les fichiers d'abord, puis la base. Si un fichier résiste, l'opération s'arrête et l'album est conservé ([8.5](#85-conservation-et-suppression-automatique)).
+- La clôture ne supprime rien : les photos d'un album clôturé restent sur le serveur jusqu'à sa suppression, automatique à l'échéance ([8.5](#85-conservation-et-suppression-automatique)) ou faite à la main depuis l'administration.
 
 ### 8.4 Archive ZIP
 
@@ -924,6 +941,57 @@ Seule exception : le QR code (`qr.php`), public, parce qu'il doit s'afficher dan
 - La taille n'est annoncée au navigateur (`Content-Length`) qu'en dessous de 150 Mo : l'hébergement refuse les réponses qui annoncent une très grosse taille (erreur 500 constatée à 620 Mo, aucun souci à 195 Mo, d'après le commentaire du code).
 - Mesure rapportée par le README d'origine, le 3 octobre 2026 sur le serveur : 1 000 photos (651 Mo) téléchargées en 64 secondes.
 - Le front déclenche le téléchargement par un envoi de formulaire classique, pour que le navigateur écrive l'archive sur le disque sans la charger en mémoire.
+
+### 8.5 Conservation et suppression automatique
+
+La politique de confidentialité promet la suppression des albums six mois après leur clôture et celle des demandes de la vitrine trois ans après leur réception. Le calcul des dates est dans [`../public/api/lib.php`](../public/api/lib.php), la mise en file du préavis dans [`../public/api/mail.php`](../public/api/mail.php), la décision et la suppression dans [`../public/api/retention.php`](../public/api/retention.php), appelé par `cron.php` seulement.
+
+**Constantes.**
+
+| Constante | Valeur | Fichier | Rôle |
+|---|---|---|---|
+| `DELETE_AFTER_MONTHS` | 6 | `lib.php` | Échéance par défaut et plafond : clôture + six mois |
+| `DELETE_WARNING_DAYS` | 30 | `lib.php` | Préavis : mis en file trente jours avant l'échéance |
+| `DELETE_GRACE_DAYS` | 7 | `lib.php` | Jamais de suppression moins de sept jours après l'envoi du préavis |
+| `DELETE_REWARN_HOURS` | 24 | `retention.php` | Préavis jamais parti : remis en file au plus une fois par jour et par album |
+| `DELETE_BATCH` | 5 | `retention.php` | Albums supprimés au plus par passage |
+| `REQUEST_RETENTION_YEARS` | 3 | `retention.php` | Âge des demandes de la vitrine à supprimer |
+
+**Fonctions de calcul (`lib.php`).**
+
+| Fonction | Rôle |
+|---|---|
+| `stored_date($value)` | Lit une date de la base : format strict `AAAA-MM-JJ HH:MM:SS`, UTC, année 2020 ou plus, relue à l'identique. Toute autre valeur (vide, date à zéro de MySQL, texte) donne `null` : dans le doute, aucune échéance. |
+| `add_months($date, $mois)` | Ajoute des mois sur le calendrier sans déborder sur le mois suivant : 31 août + 6 mois = 28 ou 29 février. |
+| `deletion_due_at($event)` | Échéance : `null` sans clôture lisible ; la clôture + 6 mois si `delete_at` est vide ; sinon `min(delete_at, plafond)`. `null` aussi si `delete_at` est illisible ou antérieur à la clôture. |
+| `deletion_warning_from($due)` | Début de la période de préavis : échéance moins 30 jours. |
+| `delete_warning_sends($event)` | Lit dans `mail_queue` les envois **réussis** (`sent_at` non nul) des natures `delete_organizer` et `delete_admin`. Renvoie `first` (premier envoi réussi, pour l'affichage) et `proof` (voir ci-dessous). |
+| `deletion_at($event)` | Date réelle de suppression au plus tôt : `max(échéance, preuve + 7 jours)` ; sans preuve, `max(échéance, maintenant + 7 jours)`. File illisible : comme si rien n'était parti. |
+| `deletion_is_near($event)` | Vrai à partir de trente jours avant l'échéance (et après). |
+| `delete_event($event)` | Suppression définitive (voir ci-dessous). |
+
+**Preuve d'envoi.** `delete_warning_sends()['proof']` n'est non nulle que si au moins un message `delete_admin` est parti avec succès **et**, quand l'événement a une adresse d'organisateurs, le message `delete_organizer` aussi. Sa valeur est la plus tardive de ces deux dates (pour l'administrateur, la plus ancienne de ses adresses). `delete_warned_at` ne dit que « mis en file » : un `mail()` en échec jusqu'à l'abandon laisserait cette colonne remplie sans que personne soit prévenu, d'où la lecture de `sent_at`.
+
+**Mise en file du préavis (`queue_due_delete_warnings()`, `mail.php`).** Sans adresse d'administrateur (`admin_emails()` vide), ne fait rien. Sinon, pour chaque événement avec clôture et `delete_warned_at` nul dont la période de préavis est ouverte (`now >= échéance − 30 jours`, donc aussi pour un album déjà échu), `claim_event_mails($event, 'delete_warned_at', …)` écrit la date et, dans la même transaction, supprime les restes non envoyés d'une mise en file précédente (`clear_delete_warning_mails($id, true)`), met en file un message `delete_organizer` si l'événement a une adresse d'organisateurs (`queue_organizer_mail($id, $kind)`, destinataire 0) et un `delete_admin` par adresse de l'administrateur (destinataire = rang de l'adresse, à partir de 1). La clé unique `(event_id, kind, recipient)` empêche le doublon.
+
+**Passage de la tâche (`run_retention()`, `retention.php`).** Sort tout de suite hors ligne de commande (`PHP_SAPI !== 'cli'`) en écrivant dans le journal. Sans adresse d'administrateur, ne garde que la suppression des demandes. Sinon, quatre étapes dans cet ordre, chacune dans son `try/catch (Throwable)` (transaction annulée, ligne dans le journal, les autres étapes continuent) :
+
+1. `reset_unsent_delete_warnings()` : pour chaque événement avec clôture et `delete_warned_at` non nul, si cette date a plus de 24 h, qu'il existe encore une échéance, qu'il n'y a pas de preuve (`proof` nul) et qu'aucun message de préavis n'est encore en attente d'essai (`sent_at` et `abandoned_at` nuls), alors, dans une transaction, `delete_warned_at` est remis à nul et les lignes non envoyées sont supprimées (les envoyées sont gardées : leur destinataire n'est pas prévenu deux fois). Une ligne est écrite dans le journal.
+2. `queue_due_delete_warnings()` : voir ci-dessus. Elle remet donc en file, dans le même passage, ce que l'étape 1 vient de libérer.
+3. `delete_due_events()` : voir ci-dessous. Si elle va au bout, `retention_last_run` est écrit.
+4. `delete_old_requests()` : `DELETE FROM requests WHERE created_at < maintenant − 3 ans` (UTC) ; `created_at` est la seule date de la table. Le nombre de lignes supprimées est écrit dans le journal.
+
+Puis `cron.php` appelle `send_due_mails(500, 600.0)` : les préavis mis en file partent dans la foulée.
+
+**Garde-fou (`deletion_refusal()`).** Pour chaque événement avec clôture et `delete_warned_at` non nul (les plus anciens `id` d'abord), la ligne est relue juste avant la décision (l'administrateur a pu repousser une date entre-temps) puis soumise à une suite de contrôles. Le premier qui échoue renvoie `[raison, anomalie]` : l'album est conservé, et seules les anomalies sont écrites dans le journal (« OuiSnap : album N non supprimé automatiquement : … »). L'ordre : colonnes `id`, `code`, `title`, `closes_at`, `delete_at`, `delete_warned_at` présentes (anomalie si la migration 017 manque) ; identifiant valide ; clôture présente, lisible et passée ; échéance calculable (anomalie sinon) et passée ; préavis mis en file, à une date lisible et pas dans le futur ; préavis mis en file depuis au moins 7 jours ; adresse d'administrateur configurée ; preuve d'envoi non nulle (anomalie sinon, avec la date de mise en file dans le message), pas dans le futur, et vieille d'au moins 7 jours. Il y a donc deux délais de sept jours cumulés : depuis la mise en file et depuis l'envoi réel ; le second est le plus tardif en pratique.
+
+**Lots.** `delete_due_events()` s'arrête après `DELETE_BATCH` suppressions réussies. Elle ne compte pas les albums refusés. Les suppressions réussies écrivent `auto_delete_count`, `auto_delete_last_title` et `auto_delete_last_at` (échec d'écriture : ligne dans le journal, l'album est déjà supprimé) et une ligne de journal « suppression automatique de l'album CODE « titre » (clôture …, avertissement … UTC) ».
+
+**`delete_event($event)`**, commune à l'administration et à la tâche, sans contrôle de droit ni d'échéance (c'est à l'appelant) : refuse un identifiant invalide ; efface les fichiers du dossier `storage_dir()/<id>` (compte les effacés et les restants), puis le dossier ; si un fichier ou le dossier reste, renvoie `false` en journalisant combien de fichiers sont déjà effacés du disque, et **ne touche pas à la base** ; efface l'image du QR code (le code ne sert de nom de fichier que s'il a la forme `[A-Za-z0-9]{1,16}`) ; puis, dans une transaction, supprime les lignes de `photos`, `guests` et `events` (les lignes de `mail_queue` partent par cascade). Si la transaction échoue : annulation, ligne de journal, `false`. Dans ce dernier cas les fichiers sont déjà effacés mais toutes les lignes sont conservées : au passage suivant le dossier n'existe plus et la suppression des lignes est retentée.
+
+**Journal.** Tout est écrit par `error_log()` avec le préfixe « OuiSnap » : avertissement remis en file, album non supprimé pour une raison anormale, suppression réussie, suppression impossible, suppression de demandes, étape en panne (« … en panne, rien n'a été supprimé à cette étape »), tâche lancée par le web (« suppressions automatiques non examinées »), absence d'adresse d'administrateur.
+
+**Reprise.** Rien n'est à faire à la main. Un passage interrompu laisse la base cohérente (garde-fous relus à chaque passage). Pour annuler une suppression annoncée, repousser la clôture ou la date de suppression dans l'administration (remise à zéro du préavis, voir [6.2](#62-endpoints)) ; pour retarder une suppression sans modifier l'événement, aucun interrupteur n'existe.
 
 ---
 
@@ -943,11 +1011,12 @@ Aucun service d'envoi externe n'est utilisé. La délivrabilité (SPF, DKIM du d
 
 ### 9.2 Gabarit
 
-Chaque message est un tableau PHP : `subject`, `label`, `heading`, `paragraphs`, `highlight`, `image`, `button`, `note`, `footer`, et `plain_link` (facultatif : écrit l'adresse en toutes lettres sous le bouton).
+Chaque message est un tableau PHP : `subject`, `label`, `heading`, `paragraphs`, `highlight`, `image`, `button`, `note`, `footer`, et, facultatifs, `plain_link` (écrit l'adresse en toutes lettres sous le bouton) et `reply_to` (adresse de réponse portée par le message lui-même, lue par `send_mail()` quand son paramètre `$replyTo` est absent : utile aux messages qui partent de la file). `button` peut être `null` : `mail_text()` et `mail_html()` omettent alors le bouton et le lien en clair (préavis aux organisateurs sans adresse d'administrateur à qui écrire).
 
 - `mail_html()` produit la version HTML : mise en page en tableaux, styles en ligne, en-tête vert sapin avec le logo, corps crème, bouton doré. Tout le texte passe par `htmlspecialchars`.
 - `mail_text()` produit la version texte à partir du même tableau.
-- `KIND_TEXTS` porte les tournures propres à chaque nature d'événement. « autre » n'a pas d'entrée : les messages retombent sur une formulation neutre.
+- `KIND_TEXTS` porte les tournures propres à chaque nature d'événement (dont `delete_heading` et `delete_extra` pour les préavis). « autre » n'a pas d'entrée : les messages retombent sur une formulation neutre.
+- `french_day($date)` écrit un jour avec son année (« lundi 12 avril 2027 », heure de Paris) : utilisé pour les échéances lointaines des préavis.
 - Les liens sont construits à partir de `site_url()` : la clé `site_url` de la configuration, ou à défaut le domaine de la requête.
 
 ### 9.3 Messages et déclencheurs
@@ -958,10 +1027,12 @@ Chaque message est un tableau PHP : `subject`, `label`, `heading`, `paragraphs`,
 | Ouverture de l'album | `organizer_open_mail()` | Les organisateurs | `queue_due_open_mails()` : dès que le début est passé | Oui, `open_organizer` |
 | Album dévoilé (invités) | `reveal_mail()` | Les invités avec e-mail **et** au moins une photo | `queue_due_reveal_mails()` : dès que la révélation est passée | Oui, `reveal_guest` |
 | Album dévoilé (organisateurs) | `organizer_reveal_mail()` | Les organisateurs | `queue_due_reveal_mails()` : dès que la révélation est passée | Oui, `reveal_organizer` |
+| Préavis de suppression (organisateurs) | `organizer_delete_mail()` | Les organisateurs, s'ils ont une adresse | `queue_due_delete_warnings()`, appelée par `run_retention()` : 30 jours avant l'échéance | Oui, `delete_organizer` |
+| Préavis de suppression (administrateur) | `admin_delete_mail()` | Chaque adresse de `admin_emails` | Idem | Oui, `delete_admin` |
 | Demande reçue | tableau dans `contact.php` | L'adresse `mail_from` ; la réponse va à l'auteur de la demande | `contact.php` | Non |
 | Réinitialisation du mot de passe | `admin_reset_mail()` | Chaque adresse de `admin_emails` | `admin-forgot.php` | Non |
 
-Les messages d'ouverture et de révélation ne partent pas à heure fixe. Ils sont mis en file puis envoyés par `send_due_mails($limit, $seconds)`, appelée par quatre scripts :
+Les messages d'ouverture, de révélation et de préavis ne partent pas à heure fixe. Ils sont mis en file puis envoyés par `send_due_mails($limit, $seconds)`, appelée par quatre scripts :
 
 | Appelant | Quand | Bornes (`$limit`, `$seconds`) |
 |---|---|---|
@@ -976,7 +1047,7 @@ Le QR code n'apparaît dans un e-mail que si son image est sur le serveur. L'adm
 
 ### 9.4 File d'attente des e-mails
 
-Depuis le commit `3ffab4e`, les messages d'ouverture et de révélation passent par la table `mail_queue` ([7.2](#72-tables)). Avant, la date était écrite avant l'envoi et un échec perdait le message. Les anciennes fonctions `send_due_open_mails()` et `send_due_reveal_mails()` n'existent plus : elles sont remplacées par `queue_due_open_mails()` et `queue_due_reveal_mails()` (mise en file) et `flush_mail_queue()` (envoi). Le message de bienvenue, le mot de passe oublié et le formulaire de contact n'y passent pas.
+Depuis le commit `3ffab4e`, les messages d'ouverture et de révélation passent par la table `mail_queue` ([7.2](#72-tables)). Avant, la date était écrite avant l'envoi et un échec perdait le message. Les anciennes fonctions `send_due_open_mails()` et `send_due_reveal_mails()` n'existent plus : elles sont remplacées par `queue_due_open_mails()` et `queue_due_reveal_mails()` (mise en file) et `flush_mail_queue()` (envoi). Les deux préavis de suppression y passent aussi (natures `delete_organizer` et `delete_admin`, [8.5](#85-conservation-et-suppression-automatique)). Le message de bienvenue, le mot de passe oublié et le formulaire de contact n'y passent pas. Le correctif décrit plus bas (message « trop tôt » sans essai consommé) s'applique à toutes les natures.
 
 ```mermaid
 flowchart TD
@@ -986,7 +1057,7 @@ flowchart TD
   Q --> F
   F -- "réserve l'essai" --> R{"queued_mail()"}
   R -- "send" --> M["send_mail()"]
-  R -- "retry : trop tôt" --> W["reste en file"]
+  R -- "retry : trop tôt" --> W2["reste en file, sans essai consommé"]
   R -- "abandon : sans objet" --> X["abandoned_at"]
   M -- "vrai" --> S["sent_at"]
   M -- "faux" --> W
@@ -995,21 +1066,23 @@ flowchart TD
 
 **Mise en file** (`mail.php`).
 
-- `claim_event_mails($event, $colonne, $mise_en_file)` : ouvre une transaction, écrit la date dans `open_mail_sent_at` ou `reveal_mail_sent_at` par `UPDATE … WHERE id = ? AND colonne IS NULL`, et si une ligne a changé exécute la mise en file avant de valider. Sinon (une autre visite a déjà réservé) elle annule. Réservation et mise en file sont donc enregistrées ensemble, ou pas du tout.
-- Messages aux organisateurs : `queue_organizer_mail()` fait un `INSERT … SELECT … WHERE NOT EXISTS` ; en plus, la clé unique interdit le doublon.
+- `claim_event_mails($event, $colonne, $mise_en_file)` : ouvre une transaction, écrit la date dans `open_mail_sent_at`, `reveal_mail_sent_at` ou `delete_warned_at` par `UPDATE … WHERE id = ? AND colonne IS NULL`, et si une ligne a changé exécute la mise en file avant de valider. Sinon (une autre visite a déjà réservé) elle annule. Réservation et mise en file sont donc enregistrées ensemble, ou pas du tout.
+- Messages qui ne vont pas à un invité : `queue_organizer_mail($eventId, $kind, $recipient = 0)` fait un `INSERT … SELECT … WHERE NOT EXISTS` sur `(événement, nature, destinataire)` ; en plus, la clé unique interdit le doublon. Destinataire 0 pour les organisateurs, rang de l'adresse pour l'administrateur.
+- `clear_delete_warning_mails($eventId, $unsentOnly = false)` retire de la file les messages de préavis d'un album ; avec `$unsentOnly`, elle garde les envoyés.
 - Messages aux invités : un `INSERT … SELECT` sur `guests` pour ceux qui ont une adresse et au moins une photo, avec le même `NOT EXISTS`.
 - Ouverture : pas de message si l'événement n'a pas d'e-mail d'organisateurs ni de clé d'album (la requête les exclut), si l'album est à venir ou clôturé (ignoré), ni s'il est déjà dévoilé (la date est réservée sans rien mettre en file).
 - Révélation : message aux organisateurs seulement s'ils ont une adresse et une clé d'album.
 
 **Envoi** (`flush_mail_queue`).
 
-1. Sélection, par ordre d'`id`, de au plus `$limit` lignes ni envoyées ni abandonnées et « dues » : jamais essayées (`attempts = 0`), ou dont le dernier essai est assez ancien pour leur rang (tableau ci-dessous). Les lignes ayant atteint le maximum d'essais sans abandon noté (requête coupée en plein envoi) sont reprises pour être closes.
-2. Avant chaque message, contrôle du temps écoulé : au-delà de `$seconds`, la boucle s'arrête.
-3. **Réservation de l'essai** : `UPDATE mail_queue SET attempts = attempts + 1, last_attempt_at = ? WHERE id = ? AND attempts = <valeur lue> AND sent_at IS NULL AND abandoned_at IS NULL`. Seule la requête qui change la ligne envoie ; l'autre passe au message suivant. C'est la garantie contre l'envoi simultané en double.
-4. `queued_mail($ligne)` reconstruit le message à partir de l'événement et de l'invité d'aujourd'hui et répond `send` (adresse, message), `retry` (trop tôt) ou `abandon` (sans objet).
-5. `send` : `send_mail()` ; si elle répond vrai, `sent_at` est écrit. Sinon l'échec est noté dans le journal.
-6. `abandon` : `abandoned_at` est écrit (`abandon_queued_mail()`), avec la raison dans le journal.
-7. Si l'essai a échoué (envoi faux, ou `retry`) et que c'est le dernier permis, le message est abandonné.
+1. Lecture, par ordre d'`id` et **par pages** (au moins 200 lignes, `id > dernier id lu`), des lignes ni envoyées ni abandonnées et « dues » : jamais essayées (`attempts = 0`), ou dont le dernier essai est assez ancien pour leur rang (tableau ci-dessous). Les lignes ayant atteint le maximum d'essais sans abandon noté (requête coupée en plein envoi) sont reprises pour être closes. La boucle lit la page suivante tant que la page lue est pleine.
+2. `$limit` borne les messages **traités** (envoyés, en échec ou abandonnés), pas les lignes lues : un message « trop tôt » n'est pas compté, pour que ceux qui attendent leur heure ne bloquent pas les suivants. Avant chaque message, contrôle du temps écoulé : au-delà de `$seconds`, ou une fois `$limit` atteint, le passage s'arrête.
+3. **Messages trop tôt (correctif)** : `queued_mail()` est appelé **avant** la réservation de l'essai. S'il répond `retry`, la ligne est laissée telle quelle : ni essai réservé, ni `last_attempt_at`, ni échec dans le journal, et le couple « événement:nature » est mémorisé pour ce passage (les autres lignes du même couple sont sautées sans nouvelle question). Le message part au premier passage après son heure, même si la date est avancée ou repoussée de plusieurs jours : il n'épuise plus les six essais.
+4. **Réservation de l'essai** : `UPDATE mail_queue SET attempts = attempts + 1, last_attempt_at = ? WHERE id = ? AND attempts = <valeur lue> AND sent_at IS NULL AND abandoned_at IS NULL`. Seule la requête qui change la ligne envoie ; l'autre passe au message suivant. C'est la garantie contre l'envoi simultané en double.
+5. Le résultat de `queued_mail($ligne)` (message reconstruit à partir de l'événement et de l'invité d'aujourd'hui) a déjà été lu à l'étape 3 : `send` (adresse, message), `retry` (trop tôt) ou `abandon` (sans objet).
+6. `send` : `send_mail()` ; si elle répond vrai, `sent_at` est écrit. Sinon l'échec est noté dans le journal.
+7. `abandon` : `abandoned_at` est écrit (`abandon_queued_mail()`), avec la raison dans le journal.
+8. Si l'envoi a échoué et que c'est le dernier essai permis, le message est abandonné.
 
 | Essais déjà faits | Attente avant le suivant, depuis `last_attempt_at` |
 |---|---|
@@ -1023,7 +1096,9 @@ flowchart TD
 
 Les délais sont dans `MAIL_RETRY_DELAYS` (`[0, 600, 1800, 7200, 21600, 43200]`) ; le nombre d'essais en est le nombre d'éléments. Au moins 20 h 40 séparent le premier essai de l'abandon ; la granularité réelle est celle des passages (tâche toutes les heures, visites).
 
-Cas d'abandon immédiat de `queued_mail` : événement supprimé ; album clôturé ; invité supprimé, sans adresse ou sans photo ; événement sans adresse d'organisateurs ni clé d'album ; ouverture d'un album déjà dévoilé ; nature de message inconnue. Cas `retry` : révélation pas encore atteinte (M3, M4), album pas encore ouvert (M2). Un `retry` **consomme un essai** : une révélation repoussée de plus d'une vingtaine d'heures après la mise en file épuise les six essais, et les messages sont abandonnés sans être remis en file (la réservation de l'événement est déjà écrite).
+Cas d'abandon immédiat de `queued_mail` : événement supprimé ; album clôturé (ouverture et révélation seulement) ; invité supprimé, sans adresse ou sans photo ; événement sans adresse d'organisateurs ni clé d'album ; ouverture d'un album déjà dévoilé ; nature de message inconnue ; et, pour les préavis, échéance absente ou `delete_warned_at` nul (préavis annulé), organisateurs sans adresse, adresse d'administrateur de ce rang absente de la configuration. Cas `retry` : révélation pas encore atteinte (M3, M4), album pas encore ouvert (M2). Un `retry` **ne consomme plus d'essai** (voir l'étape 3) : un début ou une révélation repoussés n'abandonnent plus les messages.
+
+**Préavis de suppression dans la file.** Pour ces deux natures, `queued_mail()` répond avant le test « album clôturé » : le préavis part justement quand l'album est clôturé. Le jour annoncé est `max(échéance, maintenant + 7 jours)`, recalculé à chaque essai ; `organizer_delete_mail()` choisit sa version selon `is_expired()` et la présence d'une clé d'album. Le nombre de photos du message à l'administrateur est compté à l'essai.
 
 **Garanties et limites.**
 
@@ -1035,20 +1110,21 @@ Cas d'abandon immédiat de `queued_mail` : événement supprimé ; album clôtur
 - Une panne de la file (`PDOException` : table absente, base occupée) est attrapée par `send_due_mails()` : transaction annulée, ligne dans le journal (« OuiSnap : file d'attente des e-mails en panne »), la page répond normalement. Le passage suivant recommence.
 - **Événements déjà traités** : les dates `open_mail_sent_at` et `reveal_mail_sent_at` déjà écrites avant la migration 016 ne sont pas reprises : seuls les événements dont la réservation est encore nulle passent par la file. Les messages perdus avant 016 le restent.
 - **Code sans la table** : si le nouveau code tourne avant la migration 016, les appels ne plantent pas, mais aucun message ne part (la mise en file échoue, la réservation est annulée) ; les messages attendent la migration, sans perte. Voir [13.1](#131-procédure).
-- Les abandons restent comptés dans l'administration tant que l'événement existe. Aucun écran ni script ne renvoie un message abandonné (secours manuel en [13.6](#136-exploitation-courante)).
+- Les abandons restent comptés dans l'administration tant que l'événement existe. Aucun écran ni script ne renvoie un message abandonné (secours manuel en [13.6](#136-exploitation-courante)), à une exception : un préavis de suppression abandonné est remis en file par la tâche planifiée ([8.5](#85-conservation-et-suppression-automatique)).
+- Le correctif des messages « trop tôt » et les préavis n'ont été vérifiés que sur la base de test SQLite (154 contrôles) et dans le navigateur en local, jamais par l'envoi réel ni sur MySQL.
 
 ### 9.5 Tâche planifiée
 
-`cron.php` ne renvoie rien et n'a pas de protection : l'appeler ne fait qu'envoyer ce qui devait partir (et noter le passage). Il s'exécute dans deux modes, détectés par `PHP_SAPI === 'cli'` :
+`cron.php` ne renvoie rien et n'a pas de protection : l'appeler ne fait qu'envoyer ce qui devait partir (et noter le passage). Il s'exécute dans deux modes, détectés par `PHP_SAPI === 'cli'`. **Seul le mode `cli` applique les durées de conservation** (suppression des albums et des demandes, [8.5](#85-conservation-et-suppression-automatique)) : un appel web ne supprime jamais rien.
 
 | Mode | Qui l'a lancé | `cron_last_mode` | Bornes de `send_due_mails` | Particularité |
 |---|---|---|---|---|
-| `cli` | Le planificateur de l'hébergeur | `cli` | 500 messages, 600 secondes | Sans clé `site_url` dans la configuration (et sans `mail_log`), le passage est noté, une ligne est écrite dans le journal et le script sort en erreur (code 1) sans rien envoyer : en ligne de commande, le domaine du site ne se devine pas et les liens des messages seraient faux. |
-| `web` | Un appel de l'adresse `/api/cron.php` (navigateur, `curl`, ou tâche OVH réglée sur une adresse) | `web` | 100 messages, 20 secondes | Le domaine est déduit de la requête si `site_url` manque. |
+| `cli` | Le planificateur de l'hébergeur | `cli` | 500 messages, 600 secondes | Après l'écriture du passage et le test de `site_url`, appelle `run_retention()` **avant** `send_due_mails(500, 600.0)` : les préavis mis en file partent dans la foulée. Sans clé `site_url` dans la configuration (et sans `mail_log`), le passage est noté, une ligne est écrite dans le journal et le script sort en erreur (code 1) sans rien envoyer **ni rien supprimer** : en ligne de commande, le domaine du site ne se devine pas et les liens des messages seraient faux. |
+| `web` | Un appel de l'adresse `/api/cron.php` (navigateur, `curl`, ou tâche OVH réglée sur une adresse) | `web` | 100 messages, 20 secondes | Le domaine est déduit de la requête si `site_url` manque. Aucune conservation : une ligne est écrite dans le journal (« tâche planifiée lancée par le web … suppressions automatiques non examinées »). Si l'hébergeur lance la tâche ainsi, aucun album n'est jamais supprimé automatiquement. |
 
 Dans les deux cas, le script écrit d'abord `cron_last_run` (heure UTC) et `cron_last_mode` dans `settings` par `save_setting()`. Si cette écriture échoue (`PDOException`), l'erreur est notée dans le journal et l'envoi continue. Le mode `web` fausse l'état affiché : n'importe qui peut appeler l'adresse (voir [10.7](#107-risques-connus-et-limites)), et l'administration écrit alors « , par un appel web ».
 
-L'administration lit ces deux réglages dans `admin_status()` ([6.2](#62-endpoints)) et alerte au-delà de deux heures sans passage (`2 * 3600` dans `MailStatus`, `admin-app.tsx`), ou si `cronAge` est nul.
+L'administration lit ces deux réglages dans `admin_status()` ([6.2](#62-endpoints)) et alerte au-delà de deux heures sans passage (`2 * 3600` dans `MailStatus`, `admin-app.tsx`), ou si `cronAge` est nul. Les réglages `retention_last_run`, `auto_delete_count`, `auto_delete_last_title` et `auto_delete_last_at` ([7.2](#72-tables)) alimentent trois lignes de plus du même bloc, affichées quand la tâche est déjà passée une fois : « Suppressions automatiques : examinées il y a … », ou en rouge « … aucun examen depuis … » (plus de deux heures) ou « … jamais examinées. Elles ne le sont que si l'hébergeur lance la tâche planifiée en ligne de commande. », puis « Dernière suppression automatique : « titre », le jour. ». `retention_last_run` n'est écrit que par une passe de `delete_due_events()` menée à son terme : sans adresse d'administrateur ou avec la migration 017 absente, il reste ancien et l'administration le signale.
 
 La tâche se crée à la main dans l'espace client OVH : voir [13.7](#137-créer-la-tâche-planifiée-chez-ovh). **Au 6 octobre 2026, elle n'est pas créée** : l'administration affiche « aucun passage enregistré » tant qu'elle ne passe pas. Sans elle, les messages partent à la première visite utile après l'échéance.
 
@@ -1133,7 +1209,7 @@ Si la table `settings` manque, `admin_password()` échoue et **toute connexion e
 
 ### 10.5 Protections du dossier `api/` et en-têtes
 
-[`../public/api/.htaccess`](../public/api/.htaccess) interdit l'accès web à `config.php`, `config.example.php`, `lib.php` et `mail.php`.
+[`../public/api/.htaccess`](../public/api/.htaccess) interdit l'accès web à `config.php`, `config.example.php`, `lib.php`, `mail.php` et `retention.php` (expression `^(config|config\.example|lib|mail|retention)\.php$`).
 
 [`../public/.htaccess`](../public/.htaccess) :
 
@@ -1148,7 +1224,7 @@ Si la table `settings` manque, `admin_password()` échoue et **toute connexion e
 | Cache | `.js`, `.css`, `.woff2` : un an, immuable. `.html`, `.txt` : toujours revérifiés. | Une mise en ligne est visible tout de suite |
 | Page d'erreur | `ErrorDocument 404 /404.html` | |
 
-Ces fichiers ne s'appliquent qu'en production (Apache). En local, `lib.php`, `mail.php` et `config.php` sont joignables, sans conséquence : aucun n'affiche quoi que ce soit.
+Ces fichiers ne s'appliquent qu'en production (Apache). En local, `lib.php`, `mail.php`, `retention.php` et `config.php` sont joignables, sans conséquence : aucun n'affiche quoi que ce soit. `retention.php` ne définit que des fonctions, aucune n'est appelée à son chargement, et `run_retention()` refuse de tourner hors ligne de commande.
 
 ### 10.6 Validation des envois de fichiers
 
@@ -1169,6 +1245,7 @@ Les limites d'envoi de PHP chez OVH (`upload_max_filesize`, `post_max_size`) ne 
 | Secrets en clair dans la base | `events.album_key` et `guests.link_token` sont lisibles par qui a accès à la base. | Choix assumé : il faut pouvoir réafficher et renvoyer ces liens. |
 | Pas de limitation de débit hors administration | `join`, `upload` et `contact` n'ont pas de plafond par adresse. `contact` n'a qu'un champ piège. | Les limites par événement (photographes, photos par photographe) bornent les abus quand elles sont réglées. |
 | `cron.php` et `qr.php` publics | Appelables par tous | Sans effet nuisible : envoi de ce qui devait partir (borné à 100 messages et 20 secondes par appel web) ; image non secrète. Un appel web note aussi un passage : l'état affiché dans l'administration peut être faussé par un tiers, mais il signale alors « par un appel web ». |
+| Qui peut déclencher une suppression d'album | Trois chemins seulement : l'administrateur connecté (`admin-event-delete.php`, une suppression à la main, sans délai) ; la tâche planifiée lancée par l'hébergeur en ligne de commande (`run_retention()` refuse `PHP_SAPI !== 'cli'`) ; personne d'autre. Ni une visite, ni un appel web de `cron.php`, ni `retention.php` (interdit par `.htaccess` et sans effet à son chargement) ne suppriment quoi que ce soit. Une personne qui appelle `cron.php` par le web ne peut rien supprimer. | Le garde-fou ([8.5](#85-conservation-et-suppression-automatique)) ne supprime que sur preuve d'envoi et dans le doute s'abstient. |
 | Pas de jeton anti-CSRF | L'administration repose sur le cookie `SameSite=Strict` | Suffisant pour les navigateurs actuels. |
 | Pas d'en-tête `Content-Security-Policy` | Non défini | Le site ne charge aucun script d'un autre domaine. |
 | Adresse IP du visiteur | La limitation des essais lit `REMOTE_ADDR`. Si l'hébergeur place un relais devant PHP, toutes les requêtes peuvent sembler venir de la même adresse. | À confirmer chez OVH. Le plafond global de 30 échecs couvre ce cas. |
@@ -1309,6 +1386,10 @@ Deux points à savoir :
 
 **Cas de `016_mail_queue.sql` (file des e-mails).** Elle crée une table que l'ancien code ignore : elle passe avant le déploiement sans gêner personne. Si le nouveau code est déployé avant elle, rien ne plante (les erreurs de la file sont attrapées), mais aucun e-mail d'ouverture ou de révélation ne part tant que la table manque : la réservation de l'album est annulée avec la mise en file, et le journal se remplit d'une ligne par appel. Les messages ne sont pas perdus : ils partent après la migration. Retour arrière : redéployer le commit précédent ; la table reste, sans effet, et les messages encore en file ne partent plus (l'ancien code ne la lit pas).
 
+**Cas de `017_auto_delete.sql` (suppression automatique).** Elle ajoute deux colonnes à `events`. **Elle passe avant le déploiement** : le nouveau `admin-event-save.php` écrit `delete_at` à chaque enregistrement d'événement, et sans la colonne la création et la modification d'un événement échoueraient (500). L'ancien code, lui, ignore les colonnes (il nomme les siennes) : la migration en avance ne le gêne pas. Si le nouveau code tourne sans la migration, les examens de suppression de la tâche tombent en panne sans rien supprimer (ligne de journal « … en panne, rien n'a été supprimé à cette étape »), et `admin_event_payload()` et `album.php` continuent de répondre (colonnes absentes lues comme vides). Retour arrière : redéployer le commit précédent ; les colonnes restent, sans effet, et les préavis déjà en file ne partent plus.
+
+**Ce qui se passe au premier passage de la tâche après la mise en ligne.** Les albums clôturés depuis plus de cinq mois sont à moins de trente jours de leur échéance, voire échus : leur préavis est mis en file au premier passage et part dans la foulée. Un album déjà échu n'est pas supprimé ce jour-là : il l'est au plus tôt sept jours après l'envoi réel du préavis, à condition que ce préavis soit parti à l'administrateur (et aux organisateurs qui ont une adresse). Les administrateurs reçoivent donc un message par album concerné ; vérifier ensuite la liste des événements (ligne « Suppression des photos ») avant la première suppression. Pour garder un de ces albums, repousser sa clôture dans l'intervalle.
+
 **Invité avec la page ouverte pendant la mise en ligne.** Sa page déjà chargée continue de fonctionner avec l'ancien code : elle envoie les photos sans `client_id`, que le nouveau `upload.php` accepte comme avant (sans anti-doublon). Les photos en attente d'une page de la nouvelle version sont gardées sur le téléphone et reprises à la réouverture. Faire la mise en ligne hors d'un événement en cours reste préférable. Retour arrière : redéployer le commit précédent ; la colonne reste, sans effet.
 
 **Exception : la toute première installation.** Le script de migration lit les accès MySQL dans le `api/config.php` présent sur le serveur. Sur un hébergement vide, il faut donc déployer une première fois, puis migrer.
@@ -1353,6 +1434,7 @@ Le script temporaire porte un nom aléatoire et il est supprimé même en cas d'
 | Adresse en `http://` | Redirigée vers `https://` |
 | E-mails | Le message d'ouverture arrive aux organisateurs de l'événement de test |
 | État de la file des e-mails | En haut de la liste de l'administration : « Tâche planifiée : … ». Aucune ligne « abandonné » ni « en attente de nouvel essai » une fois l'événement de test traité |
+| Suppression automatique | Sur chaque carte d'événement clôturé ou à échéance, la ligne « Suppression des photos » ; dans le bloc de la tâche, « Suppressions automatiques : examinées il y a N minutes » (et non « jamais examinées », qui signale une tâche lancée par le web ou une migration manquante). Après la migration : enregistrer un événement de test avec une date de suppression, sans erreur |
 | Tâche planifiée | Tant qu'elle n'est pas créée : « aucun passage enregistré » en rouge. Dans l'heure qui suit sa création : « dernier passage il y a N minutes », sans « par un appel web » (13.7) |
 
 Penser à supprimer l'événement de test ensuite.
@@ -1401,8 +1483,8 @@ Dans l'ordre :
 | Tâche planifiée | Appel horaire de `api/cron.php`, **à créer** dans l'espace client OVH (voir [13.7](#137-créer-la-tâche-planifiée-chez-ovh) et [9.5](#95-tâche-planifiée)). Son état se lit en haut de la liste de l'administration. |
 | File des e-mails | Lignes de la table `mail_queue`, consultables par phpMyAdmin (`abandoned_at` non nul : abandonné ; `sent_at` nul et `abandoned_at` nul : en attente). Le journal PHP contient les lignes « OuiSnap : e-mail N de la file … ». Secours manuel, non éprouvé : pour retenter un message abandonné, remettre `attempts` à 0, `last_attempt_at` et `abandoned_at` à `NULL` sur sa ligne ; il part au passage suivant. |
 | Sauvegardes | Aucun script de sauvegarde dans le dépôt. D'après le README d'origine, les photos (`ouisnap-data/`) et la base ne sont sauvegardées que par les instantanés d'OVH (à confirmer). |
-| Suppression des albums | Manuelle, depuis l'administration. La politique de confidentialité annonce une suppression au plus tard six mois après la clôture : rien ne l'automatise. |
-| Demandes de la vitrine | Reçues par e-mail ; aussi conservées dans la table `requests`, sans écran pour les relire ni purge automatique |
+| Suppression des albums | Automatique, par la tâche planifiée en ligne de commande, six mois après la clôture au plus tard, après préavis ([8.5](#85-conservation-et-suppression-automatique)) ; manuelle possible depuis l'administration. Le journal PHP contient les lignes « OuiSnap : suppression automatique de l'album … » et celles des albums non supprimés pour une raison anormale. |
+| Demandes de la vitrine | Reçues par e-mail ; aussi conservées dans la table `requests`, sans écran pour les relire. Supprimées trois ans après leur réception par la tâche planifiée. |
 | Espace disque | Le poids de chaque album s'affiche dans l'administration (colonne `bytes`). Pas de quota ni d'alerte. |
 
 ### 13.7 Créer la tâche planifiée chez OVH
@@ -1415,6 +1497,8 @@ Dans l'ordre :
 4. **Fréquence** : toutes les heures. L'alerte de l'administration se déclenche après deux heures sans passage.
 5. Enregistrer et activer la tâche.
 6. **Vérifier** : au passage suivant, recharger l'administration : « Tâche planifiée : dernier passage il y a N minutes. » (sans « , par un appel web », ce qui indique que l'hébergeur l'a lancée en ligne de commande). L'alerte rouge doit avoir disparu.
+
+**Lancement en ligne de commande exigé.** La conservation ne s'applique que si OVH lance le script par l'interpréteur PHP en ligne de commande, comme le fait la tâche « Cron » de l'espace client. Une tâche réglée sur une adresse web envoie les e-mails mais ne supprime rien. Le signe, dans l'administration : « dernier passage … » sans « par un appel web », et « Suppressions automatiques : examinées il y a … » (au lieu de « jamais examinées »).
 
 Points à vérifier au premier passage (non éprouvés) : que `mail()` fonctionne depuis la ligne de commande chez OVH ; la durée maximale qu'OVH accorde à une tâche (la borne de 600 secondes de `cron.php` n'en tient pas compte) ; que `site_url` est bien dans `api/config.php` (déployé depuis `OVH_SITE_URL`) : sans lui, la tâche note son passage mais n'envoie rien.
 
@@ -1509,7 +1593,15 @@ Uniquement ce que le code ou le README d'origine confirment.
 | Un e-mail d'ouverture ou de révélation en échec est retenté (10 min, 30 min, 2 h, 6 h, 12 h), puis abandonné au sixième échec ; un message abandonné n'est jamais renvoyé, sauf à la main dans la base | `mail.php` (`MAIL_RETRY_DELAYS`) |
 | Nouveaux essais jamais éprouvés par un envoi réel ; `mail()` qui répond vrai ne garantit pas la remise | `mail.php` (`send_mail`) |
 | Fenêtre étroite de double envoi si le serveur s'arrête entre l'envoi et l'écriture de `sent_at` | `flush_mail_queue()` |
-| Une révélation repoussée de plus d'une vingtaine d'heures après la mise en file épuise les essais : les messages sont abandonnés et ne sont pas remis en file | `queued_mail()` |
+| Un début ou une révélation repoussés après la mise en file n'épuisent plus les essais : le message attend son heure, sans essai consommé. Vérifié sur une base de test seulement | `flush_mail_queue()` |
+| Suppression automatique : jamais éprouvée sur MySQL ni par un envoi réel de préavis. Vérifiée sur une base de test SQLite (154 contrôles) et dans le navigateur en local | `retention.php`, `mail.php` |
+| La suppression automatique ne tourne que si l'hébergeur lance `cron.php` en ligne de commande ; sinon rien n'est supprimé (l'administration l'affiche) | `cron.php`, `run_retention()` |
+| Si l'envoi d'e-mails échoue durablement, aucun album n'est supprimé et le préavis est retenté chaque jour : la promesse des six mois n'est alors pas tenue, sans perte de photo | `reset_unsent_delete_warnings()` |
+| Six mois « au plus tard » : jusqu'à sept jours de plus après l'envoi du préavis, notamment pour les albums déjà échus à la mise en ligne | `deletion_refusal()`, `DELETE_GRACE_DAYS` |
+| Sans adresse d'administrateur configurée, aucun album n'est annoncé ni supprimé ; les demandes de la vitrine le sont quand même | `run_retention()` |
+| Au plus cinq albums supprimés par passage (le reste attend le passage suivant) | `DELETE_BATCH` |
+| Suppression en deux temps (fichiers, puis lignes) : un échec de la base laisse des lignes sans fichiers ; la suppression est retentée au passage suivant | `delete_event()` |
+| Demandes de la vitrine : seule la date de réception est connue ; trois ans comptés à partir d'elle | `delete_old_requests()` |
 | Les événements dont les messages avaient été réservés avant la migration 016 ne sont pas repris | `claim_event_mails()` |
 | Sans tâche planifiée ni visite, les e-mails d'ouverture et de révélation ne partent pas à l'heure ; la tâche est à créer chez OVH, son état est visible dans l'administration | `mail.php`, `cron.php`, `admin_status()` |
 | Le compteur d'e-mails abandonnés ne baisse qu'à la suppression de l'événement ; le compteur « en attente » compte aussi les messages pas encore essayés | `admin_status()` |
@@ -1543,7 +1635,7 @@ Uniquement ce que le code ou le README d'origine confirment.
 
 Aucune de ces pistes n'est décidée. Elles découlent directement des limites ci-dessus.
 
-- Suppression automatique des albums six mois après la clôture, pour tenir sans geste manuel l'engagement de la politique de confidentialité.
+- Interrupteur ou bouton « garder cet album » dans l'administration, et bouton pour renvoyer un préavis abandonné.
 - Sauvegarde propre des photos et de la base, en plus des instantanés de l'hébergeur.
 - Renvoi à la main d'un e-mail abandonné depuis l'administration, et suivi de la remise réelle des e-mails (retours d'erreur de l'hébergeur).
 - Écran de lecture des demandes (`requests`) dans l'administration.
@@ -1590,6 +1682,15 @@ Aucune de ces pistes n'est décidée. Elles découlent directement des limites c
 | Le nombre de messages et la durée d'un passage d'envoi | Paramètres de `send_due_mails()` dans `public/api/mail.php` ; valeurs de la tâche planifiée dans `public/api/cron.php` |
 | La table de la file des e-mails | `database/016_mail_queue.sql`, `database/local.sqlite.sql` |
 | L'état de la tâche planifiée dans l'administration (textes, seuil de deux heures) | `MailStatus` dans `src/components/admin/admin-app.tsx` ; type dans `src/components/admin/types.ts` ; données dans `admin_status()` de `public/api/lib.php`, renvoyées par `public/api/admin-events.php` |
+| Les durées de conservation (six mois, trente jours de préavis, sept jours de délai, cinq albums par passage, trois ans pour les demandes) | `DELETE_AFTER_MONTHS`, `DELETE_WARNING_DAYS`, `DELETE_GRACE_DAYS` dans `public/api/lib.php` ; `DELETE_BATCH`, `DELETE_REWARN_HOURS`, `REQUEST_RETENTION_YEARS` dans `public/api/retention.php` ; texte de la politique de confidentialité dans `src/app/confidentialite/page.tsx` ; plafond du champ côté formulaire : `sixMonthsLater()` dans `src/components/admin/event-form.tsx` |
+| Le calcul de l'échéance et la preuve d'envoi du préavis | `deletion_due_at()`, `deletion_at()`, `delete_warning_sends()`, `add_months()` dans `public/api/lib.php` |
+| La décision de supprimer un album (garde-fou) | `deletion_refusal()` et `delete_due_events()` dans `public/api/retention.php` |
+| La suppression d'un événement (fichiers, QR code, lignes) | `delete_event()` dans `public/api/lib.php` (partagée par `public/api/admin-event-delete.php` et `retention.php`) |
+| La mise en file et le texte des préavis de suppression | `queue_due_delete_warnings()`, `organizer_delete_mail()`, `admin_delete_mail()`, `KIND_TEXTS` (`delete_heading`, `delete_extra`) dans `public/api/mail.php` ; remise à zéro du préavis : `public/api/admin-event-save.php` ; remise en file d'un préavis jamais parti : `reset_unsent_delete_warnings()` dans `retention.php` |
+| Le champ « Suppression », la ligne « Suppression des photos » et le bloc d'examen des suppressions dans l'administration | `src/components/admin/event-form.tsx`, `src/components/admin/admin-app.tsx` (`MailStatus`), `src/components/admin/types.ts` ; données : `admin_event_payload()` et `admin_status()` dans `public/api/lib.php` |
+| L'avertissement de suppression sur la page des organisateurs | `public/api/album.php` (`closesAt`, `deletesAt`), `src/components/album/album-app.tsx` |
+| La suppression des demandes de la vitrine | `delete_old_requests()` dans `public/api/retention.php` |
+| Les colonnes `delete_at` et `delete_warned_at` | `database/017_auto_delete.sql`, `database/local.sqlite.sql`, tableau `$added` de `scripts/local.sh` |
 | La tâche planifiée (ce qu'elle note, ses deux modes) | `public/api/cron.php`, `save_setting()` dans `public/api/lib.php` ; création chez OVH : [13.7](#137-créer-la-tâche-planifiée-chez-ovh) |
 | Un message d'erreur de l'API | Le fichier PHP de l'endpoint, ou `public/api/lib.php` pour les messages communs |
 | Les couleurs ou les polices | `src/app/globals.css`, `src/app/layout.tsx` ; puis `public/api/mail.php` et `src/lib/card-kit.ts`, qui ont leurs propres valeurs |

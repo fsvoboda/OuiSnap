@@ -13,8 +13,8 @@ Ce document décrit ce que fait OuiSnap et selon quelles règles. Les processus 
 | Qui | Ce qu'il peut faire |
 |---|---|
 | **Visiteur de la vitrine** | Découvre OuiSnap sur la page d'accueil (vidéo de présentation, captures de l'appli) et envoie une demande d'album : nom, e-mail, type et date de l'événement, message facultatif. |
-| **Administrateur** (Franck) | Se connecte à `/admin/` avec un mot de passe. Crée et règle les événements, imprime les cartes QR des tables et les cartes des organisateurs, récupère le lien de l'album des organisateurs, voit toutes les photos à tout moment, supprime des photos ou un événement entier. |
-| **Organisateurs** (mariés, famille, hôtes) | Reçoivent un lien privé vers leur album. Avant la révélation, ils voient qui a photographié et combien. Après, ils parcourent les photos, posent des coups de cœur et téléchargent tout en un fichier ZIP. |
+| **Administrateur** (Franck) | Se connecte à `/admin/` avec un mot de passe. Crée et règle les événements (dont leur date de suppression), imprime les cartes QR des tables et les cartes des organisateurs, récupère le lien de l'album des organisateurs, voit toutes les photos à tout moment, supprime des photos ou un événement entier. Il est prévenu par e-mail avant chaque suppression automatique et voit dans l'administration l'état des suppressions. |
+| **Organisateurs** (mariés, famille, hôtes) | Reçoivent un lien privé vers leur album. Avant la révélation, ils voient qui a photographié et combien. Après, ils parcourent les photos, posent des coups de cœur et téléchargent tout en un fichier ZIP. Ils sont prévenus par e-mail, puis sur leur page, avant la suppression de leur album. |
 | **Invités / photographes** | Scannent le QR code, donnent leur prénom (et leur e-mail s'ils veulent), photographient ou importent des photos, revoient et suppriment leurs propres photos tant que l'album est ouvert. |
 
 ## La vie d'un album
@@ -27,7 +27,7 @@ stateDiagram-v2
     Revele --> Cloture: jour de clôture passé
     AVenir --> Cloture: jour de clôture passé
     Ouvert --> Cloture: jour de clôture passé
-    Cloture --> [*]: suppression par l'admin
+    Cloture --> [*]: suppression automatique (ou par l'admin)
     Revele --> [*]: suppression par l'admin
 ```
 
@@ -37,7 +37,7 @@ stateDiagram-v2
 4. **Prise de photos.** Les invités scannent, se présentent, photographient. Les organisateurs suivent les compteurs, mais ne voient aucune image.
 5. **Révélation.** À la date de révélation, les envois s'arrêtent et l'album se dévoile aux organisateurs. Les photographes qui ont laissé leur e-mail et envoyé au moins une photo sont prévenus.
 6. **Clôture.** Le jour de clôture passé, l'album n'est plus accessible, ni aux organisateurs ni aux invités. Les photos restent sur le serveur.
-7. **Suppression.** Franck supprime l'album à la main. Ses photos sont alors effacées du serveur.
+7. **Suppression.** Six mois après la clôture au plus tard, l'album est supprimé automatiquement et ses photos sont effacées du serveur. Organisateurs et administrateur en sont prévenus par e-mail un mois avant (voir « Conservation des données »). Franck peut aussi supprimer un album à la main, à tout moment.
 
 ## Les règles du produit
 
@@ -84,12 +84,14 @@ Il voit tous les événements (état, dates, nombre de photographes, de photos e
 | Album ouvert | Les organisateurs | À l'ouverture : QR code et lien privé de l'album. Pas envoyé si l'album est déjà révélé. |
 | Album dévoilé | Les photographes qui ont laissé leur e-mail et envoyé au moins une photo | À la révélation. |
 | Album dévoilé | Les organisateurs | À la révélation : nombre de photos et de photographes, jour de clôture. |
+| Album bientôt supprimé | Les organisateurs (s'ils ont une adresse) | Trente jours avant la suppression automatique. Deux versions : album encore accessible (télécharger ses photos) ou déjà clôturé (écrire à son photographe). |
+| Suppression automatique à venir | Les adresses de l'administrateur | Au même moment : l'album concerné, sa date de suppression, comment le garder plus longtemps. |
 | Demande reçue | Le service (adresse d'expédition de OuiSnap) | À chaque demande envoyée depuis la vitrine. |
 | Mot de passe oublié | Les adresses de l'administrateur | Quand il clique sur « Mot de passe oublié ? ». |
 
-Les messages d'ouverture et de révélation partent une seule fois par album, à la première visite utile après l'heure prévue (page invité, album des organisateurs ou administration), ou dès que la tâche planifiée de l'hébergeur passe, une fois par heure, même si personne ne visite le site.
+Les messages d'ouverture, de révélation et de suppression à venir partent une seule fois par album, à la première visite utile après l'heure prévue (page invité, album des organisateurs ou administration), ou dès que la tâche planifiée de l'hébergeur passe, une fois par heure, même si personne ne visite le site.
 
-Un message qui ne part pas n'est pas perdu : il est retenté, d'abord dix minutes plus tard, puis à intervalles de plus en plus longs (jusqu'à douze heures), et abandonné après six essais, soit environ une journée. Un message devenu sans objet est abandonné aussitôt : album clôturé, invité supprimé ou sans photo, adresse retirée. Un message déjà parti ne repart jamais. Les messages de bienvenue, de mot de passe oublié et de demande reçue ne sont pas retentés.
+Un message dont la date n'est pas encore venue (début ou révélation repoussés après sa mise en file) attend son heure sans compter d'essai et part ensuite. Un message qui ne part pas n'est pas perdu : il est retenté, d'abord dix minutes plus tard, puis à intervalles de plus en plus longs (jusqu'à douze heures), et abandonné après six essais, soit environ une journée. Un message devenu sans objet est abandonné aussitôt : album clôturé (sauf l'avertissement de suppression, qui concerne justement les albums clôturés), invité supprimé ou sans photo, adresse retirée. Un message déjà parti ne repart jamais. Pour l'avertissement de suppression, six échecs ne le font pas oublier : l'album reste conservé et l'avertissement est remis en file au passage suivant, au plus une fois par jour. Les messages de bienvenue, de mot de passe oublié et de demande reçue ne sont pas retentés.
 
 Dans l'administration, au-dessus de la liste des événements, Franck voit quand la tâche planifiée est passée pour la dernière fois, et le nombre d'e-mails en attente d'un nouvel essai ou abandonnés. Une alerte rouge s'affiche si la tâche n'est jamais passée ou pas depuis plus de deux heures : les messages ne partent alors qu'à la visite du site.
 
@@ -125,9 +127,22 @@ Le bouton de l'écran de connexion envoie un lien aux adresses de l'administrate
 
 Après 5 mots de passe erronés depuis une même adresse en 15 minutes, la connexion est bloquée pendant ce délai.
 
-### Conservation, mentions légales et confidentialité
+### Conservation des données
 
-La politique de confidentialité annonce la suppression des albums au plus tard six mois après leur clôture. Cette suppression se fait à la main depuis l'administration. Les mentions légales et la politique de confidentialité sont en ligne, liées depuis l'écran d'accueil des invités et la vitrine. Seule la page vitrine est ouverte aux moteurs de recherche.
+La politique de confidentialité promet la suppression des albums au plus tard six mois après leur clôture, et celle des demandes de la vitrine trois ans après leur réception. OuiSnap l'applique tout seul.
+
+- **Échéance.** Un album est supprimé six mois après sa clôture, jour pour jour (le 31 août, six mois plus tard, devient le 28 ou le 29 février). Franck peut choisir une date plus proche dans le formulaire de l'événement (champ « Suppression »), entre la clôture et ces six mois, jamais au-delà. Un album sans clôture n'est jamais supprimé automatiquement.
+- **Garder un album plus longtemps.** Franck repousse la clôture : l'échéance suit. L'album redevient alors accessible jusqu'à la nouvelle clôture.
+- **Préavis.** Trente jours avant l'échéance, les organisateurs (s'ils ont une adresse e-mail) et Franck reçoivent un e-mail. Le message aux organisateurs dit que les photos seront définitivement supprimées et qu'il faut les télécharger ; si l'album est déjà clôturé, il leur dit d'écrire à leur photographe pour demander de rouvrir l'accès. La page des organisateurs affiche aussi, à partir de ce moment, la date de suppression et un rappel de télécharger les photos.
+- **Aucune suppression par surprise.** Un album n'est supprimé que s'il est clôturé, que son échéance est passée et que l'avertissement est réellement parti depuis au moins sept jours, vers Franck et vers les organisateurs quand ils ont une adresse. Si l'e-mail ne part pas, l'album est conservé et l'avertissement est retenté chaque jour. Sans adresse d'administrateur configurée, rien n'est supprimé. Au plus cinq albums sont supprimés à la fois.
+- **Si Franck change une date ou l'adresse des organisateurs**, l'avertissement est refait quand c'est nécessaire (échéance avancée ou lointaine, nouvelle adresse), et les sept jours repartent de son envoi.
+- **Ce que voit Franck.** Sur la carte de chaque événement, la ligne « Suppression des photos » donne la date et l'état de l'avertissement. Au-dessus de la liste, l'administration indique quand les suppressions ont été examinées pour la dernière fois et quelle est la dernière suppression automatique.
+- **Demandes de la vitrine.** Elles sont supprimées trois ans après leur réception.
+- **Qui fait ce travail.** La tâche planifiée de l'hébergeur, lancée par l'hébergeur lui-même, et elle seule : une visite du site ne supprime jamais rien. Si l'hébergeur ne la lance pas, rien n'est supprimé et l'administration le dit en rouge.
+
+### Mentions légales et confidentialité
+
+Les mentions légales et la politique de confidentialité sont en ligne, liées depuis l'écran d'accueil des invités et la vitrine. Seule la page vitrine est ouverte aux moteurs de recherche.
 
 ## Où en est le projet
 
@@ -139,11 +154,11 @@ La politique de confidentialité annonce la suppression des albums au plus tard 
 | Administration (événements, QR codes, PDF des tables, photos, coups de cœur visibles) | en ligne |
 | Cartes imprimables : une carte de table par type d'événement, carte des organisateurs, logo au centre du QR code | codées (octobre 2026) ; rendu jamais vérifié sur papier : les QR codes ont été relus par un détecteur dans le navigateur, y compris réduits et floutés, mais rien n'a été imprimé. À imprimer et à essayer avec un vrai téléphone avant tout tirage |
 | Mot de passe oublié de l'administration | en ligne |
-| E-mails (bienvenue, ouverture, révélation, adaptés au type d'événement) | en ligne ; les e-mails d'ouverture et de révélation qui échouent sont retentés pendant environ une journée (octobre 2026). Ce nouvel essai n'a jamais été éprouvé par un envoi réel : il a été vérifié sur une base de test, pas sur la messagerie de l'hébergeur |
+| E-mails (bienvenue, ouverture, révélation, avertissement de suppression, adaptés au type d'événement) | en ligne ; les e-mails d'ouverture et de révélation qui échouent sont retentés pendant environ une journée, et un message dont la date est repoussée attend son heure sans s'épuiser (octobre 2026). Ces nouveaux essais n'ont jamais été éprouvés par un envoi réel : ils ont été vérifiés sur une base de test, pas sur la messagerie de l'hébergeur |
 | Mentions légales et politique de confidentialité | en ligne |
 | Tests de bout en bout Playwright (4 scénarios : mariage, mot de passe, types d'événement, reprise de l'envoi) | en place ; au dernier passage de chacun (4 et 5 octobre 2026), les quatre scénarios réussissent |
-| Tâche planifiée pour les e-mails sans visite du site | à créer chez l'hébergeur (une fois par heure, la marche à suivre est dans le SDD) ; son état est visible dans l'administration, qui alerte tant qu'elle n'est pas passée |
-| Suppression des albums six mois après la clôture | à faire à la main, pas automatisée |
+| Tâche planifiée (e-mails sans visite du site, suppressions automatiques) | à créer chez l'hébergeur (une fois par heure, la marche à suivre est dans le SDD) ; son état est visible dans l'administration, qui alerte tant qu'elle n'est pas passée |
+| Suppression automatique des albums six mois après la clôture, avec préavis de trente jours, et suppression des demandes de la vitrine après trois ans | en ligne depuis le 6 octobre 2026. Vérifiée sur une base de test (154 contrôles) et dans le navigateur en local ; jamais éprouvée sur la vraie base de l'hébergeur ni par un envoi réel d'avertissement. Elle ne fonctionne que si l'hébergeur lance bien la tâche planifiée (voir ci-dessus) : l'administration l'affiche |
 | Paiement | à décider |
 
 ## Pour aller plus loin

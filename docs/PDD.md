@@ -29,13 +29,15 @@ Du formulaire de demande de la vitrine jusqu'à la suppression d'un album, pour 
 | Lien privé | Adresse de l'album des organisateurs, avec une clé secrète : `/album/?k=…`. Qui l'a voit toutes les photos après la révélation. |
 | Lien personnel | Adresse envoyée par e-mail à l'invité qui a laissé son adresse : elle rouvre sa session sur n'importe quel appareil. |
 | Révélation | Moment où l'album est dévoilé aux organisateurs et où les envois s'arrêtent. |
-| Clôture | Dernier jour d'accès à l'album. Ensuite, plus personne sauf l'administrateur n'y accède. |
+| Clôture | Dernier jour d'accès à l'album. Ensuite, plus personne sauf l'administrateur n'y accède. Elle fixe aussi l'échéance de suppression de l'album. |
+| Échéance de suppression | Date à partir de laquelle un album clôturé peut être supprimé automatiquement : la clôture plus six mois, ou une date plus proche choisie par l'administrateur (RG-117). |
+| Préavis | E-mail d'avertissement envoyé trente jours avant l'échéance aux organisateurs et à l'administrateur (RG-120). |
 | Coup de cœur | Marque posée par les organisateurs sur une photo après la révélation. |
 | Bonus e-mail | Photos supplémentaires accordées à l'invité qui laisse son adresse. |
 | Carte de table | Carte A6 portant le QR code des invités, imprimée par quatre sur une page A4 et posée sur les tables. Son dessin dépend du type d'événement. |
 | Carte des organisateurs | Carte A5 en paysage, imprimée par deux sur une page A4, remise en main propre aux organisateurs. Son QR code ouvre l'album privé. |
-| File d'attente des e-mails | Liste des e-mails d'ouverture et de révélation à envoyer. Un message qui ne part pas y reste et est retenté (P12). |
-| Tâche planifiée | Programme que l'hébergeur lance toutes les heures pour envoyer les e-mails en attente, même sans visite du site (cron.php). Son dernier passage est visible dans l'administration. |
+| File d'attente des e-mails | Liste des e-mails d'ouverture, de révélation et de préavis de suppression à envoyer. Un message qui ne part pas y reste et est retenté (P12). |
+| Tâche planifiée | Programme que l'hébergeur lance toutes les heures pour envoyer les e-mails en attente, même sans visite du site (cron.php). C'est aussi lui, et lui seul, qui supprime les albums arrivés à échéance et les anciennes demandes de la vitrine (retention.php). Son dernier passage est visible dans l'administration. |
 | Photo en attente | Photo prise ou importée qui n'a pas encore été reçue par l'album. Elle est gardée sur le téléphone de l'invité jusqu'à ce que le serveur confirme sa réception. |
 | ZIP | Fichier unique contenant toutes les photos de l'album, un dossier par photographe. |
 
@@ -49,7 +51,7 @@ Vocabulaire des états : l'administration affiche « À venir », « En cours »
 | Administrateur (Franck) | Crée les événements, diffuse les QR codes, modère, clôture, supprime | `/admin/`, mot de passe |
 | Organisateurs | Suivent l'album, le découvrent, le téléchargent, posent des coups de cœur | Lien privé `/album/?k=…` |
 | Invité / photographe | Photographie et gère ses propres photos | QR code `/e/?c=CODE`, puis lien personnel s'il a laissé son e-mail |
-| Système | Envoie les e-mails à l'heure prévue | Déclenché par une visite utile ou par la tâche planifiée (cron.php) |
+| Système | Envoie les e-mails à l'heure prévue ; supprime les albums échus et les anciennes demandes | E-mails : une visite utile ou la tâche planifiée (cron.php). Suppressions : la tâche planifiée lancée par l'hébergeur en ligne de commande, jamais une visite |
 
 ## 3. Vue d'ensemble
 
@@ -67,7 +69,7 @@ Vocabulaire des états : l'administration affiche « À venir », « En cours »
 | P8 | Révélation | Système |
 | P9 | Découverte, coups de cœur et téléchargement | Organisateurs |
 | P10 | Modération par l'administrateur | Administrateur |
-| P11 | Clôture et suppression d'un album | Administrateur, système |
+| P11 | Clôture et suppression d'un album (automatique ou manuelle) | Système, administrateur, organisateurs |
 | P12 | E-mails | Système |
 | P13 | Connexion de l'administrateur et mot de passe oublié | Administrateur |
 
@@ -81,7 +83,7 @@ stateDiagram-v2
     Revele --> Cloture: fin du jour de clôture
     Ouvert --> Cloture: fin du jour de clôture (si la révélation est passée)
     AVenir --> Cloture: fin du jour de clôture
-    Cloture --> [*]: suppression par l'admin (P11)
+    Cloture --> [*]: suppression automatique à l'échéance, ou par l'admin (P11)
     Revele --> [*]: suppression par l'admin (P11)
     Ouvert --> [*]: suppression par l'admin (P11)
     AVenir --> [*]: suppression par l'admin (P11)
@@ -143,7 +145,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 **Étapes**
 
 1. Dans la liste « Événements », l'administrateur clique sur « Nouvel événement » (ou « Modifier » sur un événement existant).
-2. Il renseigne : Nature de l'événement, Nom de l'album, Nom des organisateurs, E-mail des organisateurs, Début, Révélation, Clôture, Photographes maximum, Photos maximum par photographe.
+2. Il renseigne : Nature de l'événement, Nom de l'album, Nom des organisateurs, E-mail des organisateurs, Début, Révélation, Clôture, Suppression (facultative), Photographes maximum, Photos maximum par photographe.
 3. Dès qu'il choisit le début, la révélation est proposée le lendemain à 12h00 et la clôture deux semaines après, tant qu'il ne les a pas modifiées lui-même (event-form.tsx).
 4. Il clique sur « Créer l'événement » (« Enregistrer » en modification).
 5. Le serveur crée l'événement avec un code de 8 caractères et une clé secrète pour le lien privé (admin-event-save.php).
@@ -156,14 +158,14 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 - RG-09 : la nature est mariage, baptême, anniversaire ou autre (lib.php : `EVENT_KINDS`).
 - RG-10 : le nom des organisateurs est obligatoire, 80 caractères au plus ; l'e-mail des organisateurs est obligatoire, valide, 254 caractères au plus. Ces règles valent aussi à chaque modification (admin-event-save.php).
 - RG-11 : le début et la révélation sont obligatoires ; la révélation doit suivre le début (admin-event-save.php).
-- RG-12 : la clôture est facultative ; si elle est donnée, elle doit suivre la révélation. Elle se saisit comme un jour : l'album reste accessible jusqu'à 23h59 de ce jour, heure du navigateur de l'administrateur (event-form.tsx). Vide, l'album n'est jamais clôturé.
+- RG-12 : la clôture est facultative ; si elle est donnée, elle doit suivre la révélation. Elle se saisit comme un jour : l'album reste accessible jusqu'à 23h59 de ce jour, heure du navigateur de l'administrateur (event-form.tsx). Vide, l'album n'est jamais clôturé, donc jamais supprimé automatiquement (RG-118). Repousser la clôture repousse aussi l'échéance de suppression (RG-117).
 - RG-13 : les deux limites (photographes, photos par photographe) sont des entiers de 1 à 65 535, ou vides pour « illimité » (admin-event-save.php).
 - RG-14 : la révélation est affichée à l'heure de Paris dans les e-mails et sur la page des organisateurs (lib.php, album-app.tsx).
 - RG-15 : modifier une date ou une limite agit immédiatement : l'état de l'album se recalcule à chaque requête.
 
-**Exceptions.** Une règle non respectée affiche son message sous le formulaire, par exemple « La révélation doit avoir lieu après le début. » ou « La clôture doit avoir lieu après la révélation. ». Rien n'est enregistré.
+**Exceptions.** Une règle non respectée affiche son message sous le formulaire, par exemple « La révélation doit avoir lieu après le début. », « La clôture doit avoir lieu après la révélation. » ou l'un des refus de la date de suppression (RG-119). Rien n'est enregistré.
 
-**Résultat.** Un événement existe, avec son code, son lien privé et son QR code. Les e-mails prévus sont mis en attente (P12).
+**Résultat.** Un événement existe, avec son code, son lien privé et son QR code. Les e-mails prévus sont mis en attente (P12) et son échéance de suppression est calculée (P11).
 
 ### P3. Diffusion du QR code
 
@@ -362,7 +364,8 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 4. Le total de photos reçues et le nombre d'invités s'affichent, puis la liste « prénom, nombre de photos ».
 5. Sans photo : « Aucune photo pour l'instant. Les premières arriveront dès que vos invités scanneront le QR code. »
 6. La page se rafraîchit seule toutes les 30 secondes (album-app.tsx).
-7. Quand le compte à rebours atteint zéro, la page se recharge et bascule vers la révélation.
+7. Quand la suppression de l'album est à moins de trente jours, une ligne s'ajoute sous les compteurs (RG-127).
+8. Quand le compte à rebours atteint zéro, la page se recharge et bascule vers la révélation.
 
 **Règles de gestion**
 
@@ -458,10 +461,10 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 ### P11. Clôture et suppression d'un album
 
-**Objectif.** Terminer la vie d'un album : fermer l'accès, puis effacer les données.
-**Déclencheur.** Clôture : fin du jour fixé. Suppression : décision de l'administrateur.
-**Acteurs.** Système (clôture), administrateur (suppression).
-**Préconditions.** Aucune pour la suppression.
+**Objectif.** Terminer la vie d'un album : fermer l'accès, prévenir, puis effacer les données, sans geste manuel.
+**Déclencheur.** Clôture : fin du jour fixé. Préavis et suppression : la tâche planifiée de l'hébergeur (voir RG-125). Suppression à la main : décision de l'administrateur.
+**Acteurs.** Système, organisateurs (ils reçoivent le préavis), administrateur (il reçoit le préavis, peut régler ou repousser la date, ou supprimer à la main).
+**Préconditions.** Pour la suppression automatique : l'album a une date de clôture, l'adresse d'au moins un administrateur est configurée, la tâche planifiée est lancée par l'hébergeur en ligne de commande. Aucune pour la suppression à la main.
 
 **Étapes de la clôture**
 
@@ -469,28 +472,67 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 2. Les invités et les organisateurs n'accèdent plus à rien (messages de P4 et P7).
 3. Les photos restent sur le serveur, et l'administrateur peut toujours les voir.
 
-**Étapes de la suppression**
+**Étapes de la suppression automatique**
+
+1. Dès la création de l'événement, l'échéance est connue : la clôture plus six mois, ou la date que l'administrateur a choisie dans le champ « Suppression » (RG-117, RG-119). L'administration l'affiche sur la carte de l'événement, ligne « Suppression des photos » (RG-126). Sans clôture, il n'y a pas d'échéance (RG-118).
+2. Trente jours avant l'échéance (tout de suite si elle est plus proche ou passée), au passage de la tâche planifiée, le système met le préavis en file (RG-120) : un message aux organisateurs s'ils ont une adresse (deux versions, album encore accessible ou déjà clôturé), un message à chaque adresse de l'administrateur. Les messages partent dans la foulée par la file d'e-mails (P12).
+3. Les organisateurs qui ouvrent leur lien tant que l'album est accessible voient la date de suppression et le rappel de télécharger leurs photos (RG-127). Une fois l'album clôturé, ils n'ont plus accès à la page : seul l'e-mail les prévient.
+4. Pendant ce délai, l'administrateur peut garder l'album plus longtemps en repoussant sa clôture, ou avancer la suppression (RG-119, RG-123). Il peut aussi supprimer l'album à la main, avec la confirmation décrite plus bas.
+5. À chaque passage, la tâche examine les albums. Elle supprime ceux dont toutes les conditions du garde-fou sont réunies (RG-121) : album clôturé, échéance passée, préavis réellement envoyé depuis au moins sept jours. Au plus cinq albums par passage (RG-125).
+6. Suppression : les fichiers de photos et de vignettes, l'image du QR code, puis les photos, les invités, les e-mails en file et l'événement dans la base. Le journal du serveur garde une trace (titre, code, dates). L'administration affiche la dernière suppression automatique (RG-126).
+7. Si le préavis n'a pas pu partir, l'album est conservé et le préavis est remis en file une fois par jour (RG-124).
+
+**Étapes de la suppression à la main**
 
 1. Dans la liste, l'administrateur clique sur l'icône corbeille (« Supprimer »).
 2. Une confirmation indique : « Supprimer définitivement « <nom> » ? Ses N photos seront effacées du serveur. Le QR code et le lien de l'album ne fonctionneront plus. Cette action est irréversible. »
 3. Il clique sur « Supprimer définitivement » (« Suppression… » pendant l'opération) ou « Annuler ».
-4. Le serveur efface les fichiers, l'image du QR code, puis les photos, les invités et l'événement de la base.
+4. Le serveur efface les fichiers, l'image du QR code, puis les photos, les invités et l'événement de la base (même suppression que l'automatique).
 
 **Règles de gestion**
 
 - RG-54 : la clôture est calculée par le code à chaque requête : aucune action n'est nécessaire (lib.php : `is_expired`).
-- RG-55 : la politique de confidentialité annonce la suppression des albums au plus tard six mois après la clôture. Cette suppression est manuelle : aucun mécanisme automatique ne l'exécute (README précédent, code).
-- RG-56 : si des fichiers n'ont pas pu être effacés, l'événement est conservé et l'erreur affichée : « Certaines photos n'ont pas pu être supprimées du serveur. L'album a été conservé. » (admin-event-delete.php).
-- RG-57 : la suppression est possible quel que soit l'état de l'album (admin-event-delete.php).
+- RG-55 : la politique de confidentialité promet la suppression des albums au plus tard six mois après la clôture. Cette promesse est tenue par la suppression automatique (RG-117 à RG-125). Une réserve : le délai de sept jours après l'envoi du préavis (RG-121) peut retarder la suppression de quelques jours au-delà de six mois, par exemple si le préavis n'a pas pu partir plus tôt ; la politique de confidentialité le dit (confidentialite/page.tsx).
+- RG-56 : si des fichiers n'ont pas pu être effacés, l'événement est conservé. À la main, l'erreur est affichée : « Certaines photos n'ont pas pu être supprimées du serveur. L'album a été conservé. » (admin-event-delete.php). En automatique, rien n'est affiché : l'album est conservé, l'erreur et le nombre de fichiers déjà effacés sont écrits dans le journal, et la tâche réessaie au passage suivant (lib.php : `delete_event`, retention.php).
+- RG-57 : la suppression à la main est possible quel que soit l'état de l'album, sans préavis ni délai (admin-event-delete.php).
 - RG-58 : les photos et la base ne sont sauvegardées que par les instantanés de l'hébergeur (README précédent).
+- RG-117 : échéance et plafond. L'échéance de suppression d'un album est la clôture plus six mois sur le calendrier, à la même heure (le 31 août devient le 28 ou le 29 février, jamais le 3 mars). L'administrateur peut choisir une date plus proche, entre la clôture et ce plafond : une date plus tardive est refusée à l'enregistrement et, si elle existait quand même, ramenée au plafond par le calcul (lib.php : `DELETE_AFTER_MONTHS`, `add_months`, `deletion_due_at` ; admin-event-save.php). Pour garder un album plus longtemps, il repousse sa clôture.
+- RG-118 : sans date de clôture, l'album n'est jamais supprimé automatiquement. Il en va de même si la clôture ou la date choisie est illisible ou antérieure à la clôture : dans le doute, rien n'est supprimé (lib.php : `deletion_due_at`, retention.php : `deletion_refusal`).
+- RG-119 : champ « Suppression » du formulaire de l'événement : un jour, facultatif, entre la clôture et six mois après. Vide, c'est six mois après la clôture. Enregistré comme la clôture, à 23h59 de ce jour, heure du navigateur. Refus, sous le formulaire : « La suppression automatique demande une date de clôture : sans clôture, l'album n'est jamais supprimé automatiquement. » ; « La suppression ne peut pas avoir lieu avant la clôture. » ; « La suppression ne peut pas avoir lieu plus de six mois après la clôture. Pour garder l'album plus longtemps, repoussez sa date de clôture. » La comparaison au plafond se fait au jour près (admin-event-save.php, event-form.tsx : `sixMonthsLater`).
+- RG-120 : préavis de 30 jours. Trente jours avant l'échéance, ou tout de suite si l'échéance est plus proche ou déjà passée (cas d'un album déjà échu quand la fonction est mise en ligne), le système met en file, une seule fois par album, un message aux organisateurs s'ils ont une adresse et un message à chaque adresse de l'administrateur (M7 et M8, voir P12). Il ne met rien en file sans adresse d'administrateur (lib.php : `DELETE_WARNING_DAYS` ; mail.php : `queue_due_delete_warnings`).
+- RG-121 : garde-fou. Un album n'est supprimé que si toutes ces conditions sont vraies au moment de la décision, relues dans la base juste avant : il a une clôture ; elle est passée ; l'échéance est passée ; le préavis a été mis en file ; au moins une adresse de l'administrateur est configurée ; le préavis a réellement été envoyé (date d'envoi réussi lue dans la file) à l'administrateur et, si l'album a une adresse d'organisateurs, aux organisateurs ; le dernier de ces envois date d'au moins sept jours. Un préavis seulement mis en file ne suffit pas. Dès qu'une condition manque, ou qu'une date est illisible ou dans le futur, l'album est conservé ; les cas inattendus sont écrits dans le journal (lib.php : `DELETE_GRACE_DAYS`, `delete_warning_sends` ; retention.php : `deletion_refusal`).
+- RG-122 : sans adresse d'administrateur configurée, aucun préavis n'est mis en file et aucun album n'est supprimé : l'administrateur doit toujours avoir été prévenu. Seule la suppression des anciennes demandes continue (RG-128) (retention.php : `run_retention`).
+- RG-123 : remise à zéro du préavis. Quand l'administrateur enregistre un événement dont le préavis est déjà en file, celui-ci est annulé, avec ses messages non partis, si : la nouvelle échéance est à plus de trente jours ou n'existe plus (clôture retirée) ; ou elle est avancée par rapport à l'ancienne (la date annoncée doit rester vraie) ; ou l'adresse des organisateurs change (la bonne adresse doit être prévenue). Un nouveau préavis part alors le moment venu, et les sept jours repartent de son envoi. Les messages déjà envoyés sont gardés comme preuve. Dates, remise à zéro et retrait des messages sont enregistrés ensemble, ou pas du tout. Une échéance repoussée mais encore à moins de trente jours ne remet rien à zéro : la date annoncée reste vraie (admin-event-save.php).
+- RG-124 : préavis jamais parti. Un préavis mis en file mais non envoyé à tous ses destinataires (six échecs puis abandon) bloque la suppression (RG-121). Pour qu'il ne reste pas bloqué en silence, la tâche le remet en file, au plus une fois par jour et par album, tant que des essais ne sont pas encore prévus ; l'événement est écrit dans le journal. Si l'envoi d'e-mails échoue durablement, l'album n'est donc jamais supprimé et le préavis est retenté chaque jour (retention.php : `reset_unsent_delete_warnings`, `DELETE_REWARN_HOURS`).
+- RG-125 : déclencheur et lots. La suppression automatique n'est faite que par la tâche planifiée lancée par l'hébergeur en ligne de commande, jamais par une visite d'invité, d'organisateur ou d'administrateur, ni par l'appel de `cron.php` par une adresse web (qui l'ignore et le note dans le journal). À chaque passage, ordre : remise en file des préavis jamais partis, mise en file des préavis dus, suppression des albums échus, suppression des anciennes demandes, puis envoi des e-mails. Au plus cinq albums sont supprimés par passage, les plus anciens d'abord (`DELETE_BATCH`) ; le reste attend le passage suivant. Chaque étape est isolée : la panne de l'une n'arrête pas les autres. À la mise en ligne, un album déjà échu est d'abord annoncé, puis supprimé au plus tôt sept jours après l'envoi (cron.php, retention.php).
+- RG-126 : ce que voit l'administrateur. Sur la carte de chaque événement qui a une échéance, la ligne « Suppression des photos » donne le jour réel prévu (l'échéance, jamais moins de sept jours après l'envoi du préavis), suivi de « (six mois après la clôture) » quand il n'a pas choisi de date et que l'échéance est lointaine ; puis l'état du préavis : « , avertissement envoyé le <jour> », « , avertissement en attente d'envoi » (mis en file, rien de parti), ou, à moins de trente jours, « , avertissement au prochain passage de la tâche planifiée ». La ligne passe en rouge à moins de trente jours. Au-dessus de la liste, le bloc de la tâche planifiée ajoute : « Suppressions automatiques : examinées il y a N minutes (ou heures, jours) » ; en rouge « Suppressions automatiques : aucun examen depuis N heures » au-delà de deux heures ; en rouge « Suppressions automatiques : jamais examinées. Elles ne le sont que si l'hébergeur lance la tâche planifiée en ligne de commande. » ; et, après une suppression automatique, « Dernière suppression automatique : « <titre> », le <jour>. » Le bloc n'apparaît que si la tâche est déjà passée une fois (admin-app.tsx : `MailStatus`, lib.php : `admin_status`).
+- RG-127 : ce que voient les organisateurs. Tant que l'album est accessible et que sa suppression est à moins de trente jours, la page affiche sous les compteurs : « Cet album reste accessible jusqu'au <jour de clôture>, puis sera supprimé le <jour de suppression>. Pensez à télécharger vos photos. », ou, si les deux jours sont le même, « Cet album sera supprimé le <jour>. Pensez à télécharger vos photos. » (heure de Paris). La date est la suppression réelle au plus tôt, qui tient compte des sept jours après l'envoi du préavis (album.php, album-app.tsx).
+- RG-128 : demandes de la vitrine. Les demandes enregistrées par le formulaire sont supprimées trois ans après leur réception, par la même tâche planifiée (pas de préavis, pas de limite de nombre). Cette suppression a lieu même sans adresse d'administrateur (retention.php : `REQUEST_RETENTION_YEARS`, `delete_old_requests`).
 
-**Résultat.** Plus aucune photo, aucun invité, aucune adresse e-mail liée à l'événement.
+**Exceptions**
+
+| Situation | Ce qui se passe |
+|---|---|
+| Préavis impossible à envoyer (hébergeur qui refuse, adresse absente) | Aucune suppression. Le message est retenté (RG-107), puis le préavis est remis en file chaque jour (RG-124). |
+| Un seul des deux destinataires a reçu le préavis | Pas de preuve complète : aucune suppression ; seul le message manquant est remis en file. |
+| Dossier de photos impossible à effacer | Album conservé, tout ou rien dans la base ; journal ; nouvel essai au passage suivant (RG-56). Des photos ont pu être effacées du disque : le journal le dit. |
+| Base de données refusant la suppression des lignes | Album conservé dans la base alors que ses fichiers sont déjà effacés ; journal ; nouvel essai au passage suivant. |
+| Date de suppression refusée à l'enregistrement | Message sous le formulaire, rien n'est enregistré (RG-119). |
+| Administrateur qui repousse la clôture après le préavis | Si la nouvelle échéance est à plus de trente jours, le préavis est annulé et refait plus tard (RG-123). |
+| Administrateur qui avance la suppression | Préavis annulé et refait ; sept jours au moins avant la suppression (RG-123). |
+| Album sans clôture | Jamais supprimé automatiquement (RG-118). |
+| Aucune adresse d'administrateur configurée | Ni préavis ni suppression d'album (RG-122). |
+| Tâche lancée par une adresse web | Elle envoie les e-mails mais n'examine aucune suppression ; l'administration écrit « jamais examinées » en rouge. |
+| Migration de la base pas passée | Les examens de suppression sont en panne et ne suppriment rien ; la panne est écrite dans le journal. Rien d'autre n'est touché. |
+| Plus de cinq albums échus | Cinq par passage, les autres aux passages suivants. |
+
+**Résultat.** Plus aucune photo, aucun invité, aucune adresse e-mail liée à l'événement, et chacun a été prévenu à l'avance.
 
 ### P12. E-mails
 
 **Objectif.** Informer chaque acteur au bon moment, sans intervention de l'administrateur, et ne pas perdre un message parce qu'un envoi a échoué.
 **Acteur.** Système ; administrateur (il voit l'état, voir RG-114 à RG-116).
-**Déclencheur.** Pour M1, M5 et M6 : l'action de l'utilisateur. Pour M2 à M4 : l'heure d'ouverture ou de révélation de l'album, passée.
+**Déclencheur.** Pour M1, M5 et M6 : l'action de l'utilisateur. Pour M2 à M4 : l'heure d'ouverture ou de révélation de l'album, passée. Pour M7 et M8 : la tâche planifiée, à trente jours de l'échéance de suppression (RG-120).
 
 | N° | Message (objet) | Destinataire | Déclencheur | File d'attente et nouveaux essais |
 |---|---|---|---|---|
@@ -500,11 +542,15 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 | M4 | « <album> » : votre album est dévoilé | E-mail des organisateurs | À la révélation, une fois (mail.php). Nombre de photos et de photographes, bouton « Découvrir mon album », jour de clôture. | Oui |
 | M5 | Demande OuiSnap : <nom> | Adresse d'expédition du service | À l'envoi du formulaire de la vitrine (contact.php). Réponse directe au visiteur. | Non |
 | M6 | OuiSnap : réinitialisation du mot de passe d'administration | Adresses de l'administrateur | Clic sur « Mot de passe oublié ? » (admin-forgot.php). | Non : l'erreur s'affiche à l'écran |
+| M7 | « <album> » : votre album sera supprimé le <jour> | E-mail des organisateurs, s'il y en a un | 30 jours avant la suppression automatique, une fois (mail.php). Titre propre au type d'événement (« Votre album de mariage sera bientôt supprimé »). Voir ci-dessous. | Oui |
+| M8 | OuiSnap : « <album> » sera supprimé le <jour> | Chaque adresse de l'administrateur | En même temps que M7 (mail.php). Titre « Suppression automatique à venir », bouton « Ouvrir l'administration ». | Oui |
 
-**Étapes pour M2, M3 et M4**
+**Contenu de M7 et M8.** Le jour annoncé est la suppression réelle au plus tôt : l'échéance, et jamais moins de sept jours après l'envoi (heure de Paris, avec l'année). M7 existe en deux versions. Album encore accessible : « L'album « <nom> » et toutes ses photos seront définitivement supprimés de OuiSnap le <jour>. », la date jusqu'à laquelle l'album reste accessible (si elle diffère), l'invitation à télécharger les photos, une phrase propre au type (« Les souvenirs de votre mariage vous appartiennent : gardez-en une copie chez vous. »), « Après la suppression, les photos ne pourront plus être récupérées. », bouton « Ouvrir mon album », mention que le lien est privé. Album déjà clôturé : il n'est plus accessible en ligne, ses photos seront supprimées le <jour>, « Si vous les avez déjà téléchargées, vous n'avez rien à faire. », et, si une adresse d'administrateur existe, l'invitation à écrire à son photographe en répondant au message (il pourra rouvrir l'accès : la réponse va à la première adresse de l'administrateur) ; bouton « Écrire à mon photographe ». Sans adresse d'administrateur, pas de bouton ni d'invitation à répondre. M8 donne le nom de l'album, son code, son nombre de photos, la date de clôture, si les organisateurs sont prévenus (ou « Aucune adresse d'organisateurs n'est renseignée : ils ne sont pas prévenus. ») et comment garder l'album plus longtemps (modifier la date de suppression ou de clôture) ; note : « La suppression est définitive : aucune copie des photos n'est gardée. »
+
+**Étapes pour M2 à M4 (M7 et M8 suivent les mêmes étapes)**
 
 1. L'heure d'ouverture (M2) ou de révélation (M3, M4) d'un album est passée.
-2. À la première visite utile (page invité, page des organisateurs, administration) ou au premier passage de la tâche planifiée, le système réserve l'album : il note que ses messages sont traités et met chaque message en file, tout ensemble ou rien (RG-105).
+2. À la première visite utile (page invité, page des organisateurs, administration) ou au premier passage de la tâche planifiée, le système réserve l'album : il note que ses messages sont traités et met chaque message en file, tout ensemble ou rien (RG-105). Pour M7 et M8, seule la tâche planifiée le fait (RG-120).
 3. Dans le même passage, le système envoie les messages de la file dont l'heure est venue (RG-113). Chaque message est reconstruit au moment de l'envoi, avec la situation du moment.
 4. Un message envoyé est marqué comme tel et ne repart plus (RG-111).
 5. Un message dont l'envoi échoue reste en file et sera retenté après un délai (RG-107).
@@ -516,16 +562,16 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 - RG-59 : les messages partent de l'adresse d'expédition du service, en HTML aux couleurs de OuiSnap avec une version texte de secours (mail.php).
 - RG-60 : M2 à M4 sont mis en file et envoyés « à la première occasion » : à la première visite qui appelle l'API (page invité, page des organisateurs, liste de l'administration) après l'heure prévue, ou par la tâche planifiée `cron.php` (mail.php, cron.php). Sans visite et sans tâche planifiée, le message attend.
 - RG-61 : M2 n'est pas mis en file si l'album est déjà révélé à ce moment-là, ni s'il est à venir ou clôturé (mail.php).
-- RG-62 : les messages de M2 à M4 ne sont mis en file qu'une fois par album (réservation en base) ; une fois envoyés, ils ne repartent plus (RG-111) (mail.php).
+- RG-62 : les messages de M2 à M4, M7 et M8 ne sont mis en file qu'une fois par album et par annonce (réservation en base) ; une fois envoyés, ils ne repartent plus (RG-111). M7 et M8 peuvent être remis en file seulement dans les cas de RG-123 et RG-124 (mail.php).
 - RG-63 : les objets et les phrases d'accroche suivent le type d'événement (voir 5.1) (mail.php).
-- RG-64 : si l'envoi de M1 ou de M5 échoue, l'erreur est notée dans le journal du serveur et le message n'est pas retenté ; si celui de M6 échoue, l'erreur est renvoyée à l'écran. M2 à M4 suivent RG-107 (mail.php, join.php, contact.php, admin-forgot.php).
+- RG-64 : si l'envoi de M1 ou de M5 échoue, l'erreur est notée dans le journal du serveur et le message n'est pas retenté ; si celui de M6 échoue, l'erreur est renvoyée à l'écran. M2 à M4, M7 et M8 suivent RG-107 (mail.php, join.php, contact.php, admin-forgot.php).
 - RG-65 : les e-mails d'invités contiennent un pied de page rappelant que l'adresse ne sert qu'à leur écrire à propos de l'album ; ceux des organisateurs, que leur adresse a été indiquée comme celle des organisateurs (mail.php).
-- RG-105 : mise en file. Quand l'heure est venue, le système réserve l'album et met en file ses messages dans une seule opération : si elle échoue, rien n'est réservé et un prochain passage recommence. M2 : un message aux organisateurs. M3 : un message par invité qui, à cet instant, a une adresse et au moins une photo. M4 : un message aux organisateurs. Les organisateurs ne reçoivent un message que si l'événement a une adresse d'organisateurs et une clé d'album. Un invité qui n'avait pas de photo à ce moment n'est pas ajouté ensuite (mail.php : `claim_event_mails`, `queue_due_open_mails`, `queue_due_reveal_mails`).
+- RG-105 : mise en file. Quand l'heure est venue, le système réserve l'album et met en file ses messages dans une seule opération : si elle échoue, rien n'est réservé et un prochain passage recommence. M2 : un message aux organisateurs. M3 : un message par invité qui, à cet instant, a une adresse et au moins une photo. M4 : un message aux organisateurs. M7 : un message aux organisateurs, si l'événement a une adresse d'organisateurs. M8 : un message par adresse de l'administrateur (le rang de l'adresse sert de destinataire). Les organisateurs ne reçoivent un message que si l'événement a une adresse d'organisateurs et une clé d'album. Un invité qui n'avait pas de photo à ce moment n'est pas ajouté ensuite (mail.php : `claim_event_mails`, `queue_due_open_mails`, `queue_due_reveal_mails`).
 - RG-106 : une seule mise en file par message : un même message (album, nature, destinataire) ne peut figurer qu'une fois dans la file (mail.php, 016_mail_queue.sql).
-- RG-107 : nouveaux essais. Un message est essayé au plus 6 fois : le premier essai tout de suite, puis après 10 minutes, 30 minutes, 2 heures, 6 heures et 12 heures, chaque délai étant compté depuis l'essai précédent. Le total est d'au moins 20 h 40 ; il est plus long en pratique, car un essai n'a lieu qu'à un passage (visite ou tâche planifiée, toutes les heures) (mail.php : `MAIL_RETRY_DELAYS`).
+- RG-107 : nouveaux essais. Un message (M2, M3, M4, M7, M8) est essayé au plus 6 fois : le premier essai tout de suite, puis après 10 minutes, 30 minutes, 2 heures, 6 heures et 12 heures, chaque délai étant compté depuis l'essai précédent. Le total est d'au moins 20 h 40 ; il est plus long en pratique, car un essai n'a lieu qu'à un passage (visite ou tâche planifiée, toutes les heures) (mail.php : `MAIL_RETRY_DELAYS`).
 - RG-108 : abandon après échec. Si le sixième essai échoue, le message est abandonné : il n'est plus jamais retenté et reste compté comme abandonné. L'erreur est notée dans le journal du serveur à chaque essai et à l'abandon (mail.php : `flush_mail_queue`).
-- RG-109 : message sans objet. Le message est abandonné, sans attendre les six essais, dans ces cas : album clôturé ; événement supprimé ; invité supprimé, sans adresse ou sans photo (M3) ; événement sans adresse d'organisateurs ni clé d'album (M2, M4) ; album déjà dévoilé au moment d'envoyer M2 ; nature de message inconnue (mail.php : `queued_mail`).
-- RG-110 : message trop tôt. Si, à l'essai, l'album n'est pas encore dévoilé (M3, M4, par exemple parce que l'administrateur a repoussé la révélation) ou pas encore ouvert (M2), le message n'est pas envoyé et l'essai compte quand même. Les délais de RG-107 s'appliquent : si la date est repoussée de plus d'une vingtaine d'heures (le temps des six essais), le message est abandonné (mail.php : `queued_mail`).
+- RG-109 : message sans objet. Le message est abandonné, sans attendre les six essais, dans ces cas : album clôturé (M2 à M4 seulement : M7 et M8 partent justement quand l'album est clôturé) ; événement supprimé ; invité supprimé, sans adresse ou sans photo (M3) ; événement sans adresse d'organisateurs ni clé d'album (M2, M4) ; album déjà dévoilé au moment d'envoyer M2 ; M7 ou M8 dont le préavis a été annulé ou n'a plus d'échéance (clôture retirée, remise à zéro) ; M7 sans adresse d'organisateurs ; M8 dont l'adresse de l'administrateur n'est plus dans la configuration ; nature de message inconnue (mail.php : `queued_mail`).
+- RG-110 : message trop tôt. Si l'album n'est pas encore dévoilé (M3, M4, par exemple parce que l'administrateur a repoussé la révélation) ou pas encore ouvert (M2), le message n'est pas envoyé, et ce n'est ni un échec ni un essai : il reste en file tel quel et part au premier passage après son heure, même si la date est ensuite avancée ou repoussée de plusieurs jours. Il n'est donc plus abandonné par une révélation repoussée. Un message trop tôt ne compte pas dans les bornes d'un passage (RG-113) : ceux qui attendent leur heure ne bloquent pas les autres (mail.php : `queued_mail`, `flush_mail_queue`).
 - RG-111 : pas de doublon. Un message envoyé n'est jamais renvoyé, même si deux visites arrivent en même temps : l'essai est réservé avant l'envoi et une seule visite l'obtient. Une réserve : si le serveur s'arrête après l'envoi et avant son enregistrement, le message sera retenté et pourra arriver deux fois (mail.php : `flush_mail_queue`).
 - RG-112 : le message est reconstruit à chaque essai à partir de l'événement et de l'invité tels qu'ils sont à ce moment : adresse, nombre de photos et de photographes, date de clôture (mail.php : `queued_mail`).
 - RG-113 : bornes par passage, pour ne pas ralentir le site ni dépasser les limites de l'hébergeur : une visite envoie au plus 20 messages et travaille au plus 8 secondes ; la tâche lancée par l'hébergeur au plus 500 messages et 10 minutes ; la tâche appelée par une adresse web au plus 100 messages et 20 secondes. Le reste attend le passage suivant (mail.php : `send_due_mails`, cron.php).
@@ -540,15 +586,15 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 | Échec d'envoi (hébergeur qui refuse, adresse d'expédition absente) | Le message reste en file et est retenté selon RG-107. Après six essais, il est abandonné et compté en rouge dans l'administration. |
 | Adresse absente ou retirée au moment de l'essai | Message abandonné sans autre essai (RG-109). |
 | Invité supprimé, ou sans photo | Message abandonné (RG-109). Un invité supprimé avec son événement emporte aussi ses messages en file. |
-| Date de révélation repoussée après la mise en file | Les messages M3 et M4 sont retenus, essai après essai, puis abandonnés si la nouvelle date est trop lointaine (RG-110). Ils ne sont pas remis en file à la nouvelle date : un message abandonné ne revient pas. |
+| Date de début ou de révélation repoussée après la mise en file | Les messages M2, M3 et M4 attendent en file, sans essai consommé, et partent à leur heure (RG-110). Rien n'est abandonné à cause d'un report. |
 | Album clôturé avant l'envoi | Message abandonné (RG-109). |
-| Événement supprimé | Ses messages en file sont effacés avec lui. |
+| Événement supprimé | Ses messages en file sont effacés avec lui (aussi à la suppression automatique). |
 | La file ne peut pas fonctionner (par exemple la base est occupée) | La page visitée s'affiche normalement ; l'erreur est notée dans le journal et le passage suivant recommence. |
 | Tâche lancée par l'hébergeur sans adresse du site configurée | Elle note son passage, n'envoie rien et s'arrête : les liens des messages seraient faux. L'erreur est dans le journal. |
 | Serveur arrêté entre l'envoi et son enregistrement | Le message peut partir deux fois (RG-111). |
 | E-mails des événements déjà traités avant la file | Un événement dont les messages avaient déjà été réservés avant la mise en place de la file n'est pas repris : ce qui avait échoué reste perdu. |
 
-**Limite.** `mail()` répond « vrai » quand l'hébergeur accepte le message, ce qui ne garantit pas qu'il arrive (courrier indésirable, adresse erronée, rejet plus loin). OuiSnap ne le détecte pas : un tel message est compté comme envoyé. Les nouveaux essais n'ont jamais été éprouvés par un envoi réel.
+**Limite.** `mail()` répond « vrai » quand l'hébergeur accepte le message, ce qui ne garantit pas qu'il arrive (courrier indésirable, adresse erronée, rejet plus loin). OuiSnap ne le détecte pas : un tel message est compté comme envoyé. Les nouveaux essais, la mise en attente des messages trop tôt et les messages M7 et M8 n'ont jamais été éprouvés par un envoi réel.
 
 **Résultat.** Chaque acteur reçoit ce qui le concerne, une fois, même si un premier envoi échoue.
 
@@ -640,9 +686,9 @@ Textes de la carte des organisateurs, par type (organizer-card.ts) :
 ### 5.2 Confidentialité et conservation des données
 
 - RG-78 : données des invités : prénom, photos, adresse e-mail facultative. L'adresse n'est jamais montrée aux organisateurs ni aux autres invités (politique de confidentialité).
-- RG-79 : données des organisateurs : nom et adresse e-mail, pour leur écrire (ouverture, révélation).
-- RG-80 : données du formulaire : nom, e-mail, type et date, message ; conservées trois ans après le dernier échange (politique de confidentialité). Aucune purge automatique n'existe dans le code : à confirmer.
-- RG-81 : photos, prénoms et e-mails d'un événement : conservés jusqu'à la suppression de l'album, au plus tard six mois après la clôture (politique de confidentialité). Suppression manuelle (RG-55).
+- RG-79 : données des organisateurs : nom et adresse e-mail, pour leur écrire (ouverture, révélation, préavis de suppression).
+- RG-80 : données du formulaire : nom, e-mail, type et date, message ; conservées trois ans après leur réception (politique de confidentialité). La tâche planifiée les supprime à cette échéance (RG-128). La date de réception est la seule date connue : un échange ultérieur par e-mail ne la prolonge pas.
+- RG-81 : photos, prénoms et e-mails d'un événement : conservés jusqu'à la suppression de l'album, qui est automatique six mois après la clôture, les organisateurs étant prévenus trente jours avant (politique de confidentialité ; RG-55, RG-117 à RG-125). L'administrateur peut aussi supprimer un album à la main à tout moment.
 - RG-82 : hébergement en France (OVH). Aucun cookie de publicité ou de mesure d'audience. Un identifiant de session est gardé dans le navigateur de l'invité ; un cookie de session sert à l'administrateur (politique de confidentialité).
 - RG-83 : seule la page vitrine est ouverte aux moteurs de recherche ; l'API, l'administration, l'album, la page invité et le QR plein écran sont exclus (robots.txt).
 - RG-84 : les clés des liens privés ne sont pas transmises à d'autres sites par le navigateur (Referrer-Policy) et les photos ne sont jamais accessibles par une adresse directe (README précédent, lib.php).
@@ -690,8 +736,13 @@ Textes de la carte des organisateurs, par type (organizer-card.ts) :
 | Marge de sécurité des cartes de table | 84 px (environ 7 mm) | table-card.ts |
 | Cartouche du logo dans le QR code | 30 % de la largeur au plus, 5 modules de haut ; correction d'erreurs H, sinon Q, sinon M | card-kit.ts |
 | Corps du nom sur une carte | 88 px au départ (112 px pour le mariage), 56 px au plus petit sur une ligne, 36 px au plancher sur deux lignes | card-kit.ts |
-| Conservation après clôture | six mois au plus (engagement, suppression manuelle) | confidentialite/page.tsx |
-| Essais d'un e-mail d'ouverture ou de révélation | 6 au plus, puis abandon | mail.php |
+| Conservation après clôture | six mois au plus (engagement, suppression automatique) | lib.php (`DELETE_AFTER_MONTHS`), confidentialite/page.tsx |
+| Préavis avant suppression | 30 jours avant l'échéance | lib.php (`DELETE_WARNING_DAYS`) |
+| Délai minimal entre l'envoi du préavis et la suppression | 7 jours | lib.php (`DELETE_GRACE_DAYS`) |
+| Remise en file d'un préavis jamais parti | une fois par jour et par album au plus | retention.php (`DELETE_REWARN_HOURS`) |
+| Albums supprimés par passage de la tâche | 5 au plus | retention.php (`DELETE_BATCH`) |
+| Conservation des demandes de la vitrine | 3 ans après leur réception | retention.php (`REQUEST_RETENTION_YEARS`) |
+| Essais d'un e-mail de la file (ouverture, révélation, préavis) | 6 au plus, puis abandon | mail.php |
 | Délai avant chaque essai | tout de suite, puis 10 min, 30 min, 2 h, 6 h, 12 h après l'essai précédent | mail.php (`MAIL_RETRY_DELAYS`) |
 | Borne d'une visite (envoi des e-mails) | 20 messages, 8 secondes | mail.php (`send_due_mails`) |
 | Borne de la tâche lancée par l'hébergeur | 500 messages, 600 secondes | cron.php |
@@ -717,9 +768,10 @@ Les résultats sont lus dans `.playwright-mcp/resultats.json`, un fichier local 
 Ce qui n'existe pas encore ou qui n'est pas confirmé :
 
 - **Paiement** : pas de paiement dans l'appli ; « à décider » (README précédent).
-- **Suppression automatique** des albums six mois après la clôture : engagement pris dans la politique de confidentialité, mais exécuté à la main (RG-55).
-- **Purge automatique** des demandes de la vitrine après trois ans : aucun mécanisme dans le code, à confirmer.
-- **Tâche planifiée** (`cron.php`) : à créer chez l'hébergeur (une fois par heure ; la marche à suivre est dans le SDD). Tant qu'elle n'est pas créée, ou qu'elle ne passe plus, l'administration l'écrit en rouge (RG-115) et les e-mails d'ouverture et de révélation attendent la première visite utile (RG-60).
+- **Tâche planifiée** (`cron.php`) : à créer chez l'hébergeur (une fois par heure ; la marche à suivre est dans le SDD). Tant qu'elle n'est pas créée, ou qu'elle ne passe plus, l'administration l'écrit en rouge (RG-115) et les e-mails d'ouverture et de révélation attendent la première visite utile (RG-60). Surtout, **aucun album et aucune demande ne sont supprimés** sans elle, et seulement si l'hébergeur la lance en ligne de commande, pas par une adresse web (RG-125) : l'administration l'écrit en rouge (RG-126).
+- **Suppression automatique jamais éprouvée en vrai** : vérifiée sur une base de test (154 contrôles) et dans le navigateur en local, jamais sur MySQL ni avec un envoi réel du préavis (M7, M8). Dans le doute, elle ne supprime rien (RG-121). Si l'envoi d'e-mails échoue durablement, l'album n'est jamais supprimé et le préavis est retenté chaque jour (RG-124) : la promesse des six mois n'est alors pas tenue, mais aucune photo n'est perdue par surprise.
+- **Six mois « au plus tard »** : le délai de sept jours après l'envoi du préavis (RG-121) peut repousser de quelques jours une suppression, notamment pour les albums déjà échus à la mise en ligne. La politique de confidentialité le dit.
+- **Pas de bouton** pour renvoyer un préavis à la main ni pour suspendre une suppression : l'administrateur repousse la clôture ou la date de suppression.
 - **E-mails retentés, jamais éprouvés** : le nouvel essai des e-mails d'ouverture et de révélation (RG-107) a été vérifié sur une base de test et dans le navigateur en local, jamais par un envoi réel. La remise n'est pas garantie quand l'hébergeur accepte un message (voir P12). Un message abandonné n'est pas renvoyé et l'administration n'a pas de bouton pour le renvoyer à la main. Une fenêtre étroite de double envoi existe (RG-111).
 - **Réponse à une demande de la vitrine** et création de l'événement : manuelles (P1, P2).
 - **Prévenir un invité** dont la photo est supprimée par l'administrateur : non prévu (RG-52).
