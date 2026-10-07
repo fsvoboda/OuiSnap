@@ -110,7 +110,7 @@ Chaque événement a deux QR codes, qui ne s'ouvrent pas sur la même page :
 
 Dans l'administration, le bloc « QR code et liens » les montre côte à côte. Chacun a son PDF à imprimer et son téléchargement du code seul. Le QR code des organisateurs est signalé « ALBUM PRIVÉ » jusque dans l'image téléchargée, pour ne pas le prendre pour celui des invités. Sous les deux, le lien des invités et le lien privé des organisateurs peuvent être copiés ou ouverts dans un nouvel onglet.
 
-**Cartes de table.** Le PDF des tables tient sur une page A4 : quatre cartes A6 identiques, à découper. Chaque type d'événement a sa propre carte, avec ses textes d'accroche et d'explication :
+**Cartes de table.** Le PDF des tables tient sur deux pages A4 : la première porte quatre cartes A6 identiques, à découper ; la seconde porte leurs quatre dos, à imprimer en recto-verso. Chaque type d'événement a sa propre carte, avec ses textes d'accroche et d'explication :
 
 - mariage : deux alliances entrelacées en tête de carte, les prénoms en grand, le QR code dans un fin cadre doré ;
 - baptême : une goutte d'or et des ondes, le nom et l'explication suivent les courbes ;
@@ -118,6 +118,8 @@ Dans l'administration, le bloc « QR code et liens » les montre côte à côte.
 - autre événement : le QR code cadré comme dans un viseur d'appareil photo.
 
 Toutes sont de la même famille : papier blanc, sans fond ni cadre, QR code vert sapin au centre, logo OuiSnap en signature au pied. Un nom d'événement très long est réduit puis coupé plutôt que de déborder.
+
+**Dos des cartes de table.** Le dos explique aux invités quoi faire, sans rien leur demander d'installer : le slogan « La fête, vue par vous. » signé OuiSnap, le mode d'emploi en trois étapes (ouvrir l'appareil photo et viser le code du recto ; toucher le lien et donner son prénom ; photographier la fête), puis « Rien à installer · Aucun compte · Un prénom suffit ». Un petit motif propre au type d'événement orne un filet (alliances, goutte, bougie, mire), suivi d'un paragraphe qui présente OuiSnap et change selon le type, puis de la phrase « Ce que vous ne photographiez pas, personne ne le verra. ». En pied, un petit QR code mène au site de PourUnOuiEternel, avec la mention « Le photographe de votre événement » : il est volontairement discret et sans le logo OuiSnap, pour ne pas passer pour le code de l'album. Le dos est le même pour les quatre cartes d'une feuille. Il est prévu pour une imprimante qui retourne la feuille sur le bord long, le réglage courant ; le retournement sur le bord court n'est pas géré, et sera décidé après un essai d'impression. Les traits de coupe ne figurent que sur la page des faces avant : l'imprimante décale un peu le recto-verso, et des traits sur les dos tomberaient à l'intérieur des cartes.
 
 **Carte des organisateurs.** Le PDF des organisateurs tient sur une page A4 : deux cartes identiques en format A5 paysage, à remettre en main propre aux organisateurs. Leur QR code ouvre l'album privé. La carte porte la mention « ALBUM PRIVÉ », le titre « Votre album », le nom de l'événement, ce qu'on trouve dans l'album avant et après la révélation, la date de révélation, une consigne de confidentialité (la carte est personnelle, à ne pas poser sur les tables) et « par PourUnOuiEternel » sous le logo. Son format, son carton crème et sa mention sont voulus pour qu'on ne la confonde pas avec une carte de table. Le nom du fichier ne contient jamais la clé secrète de l'album.
 
@@ -156,7 +158,7 @@ Les mentions légales et la politique de confidentialité sont en ligne, liées 
 | Parcours invité (QR code, « Connecté ! », appareil photo, import, envoi, « Mes photos » dans l'ordre de prise de vue) | en ligne, y compris l'envoi fiable des photos (gardées sur le téléphone, reprise à la réouverture, jamais en double), mis en ligne le 5 octobre 2026 ; à essayer sur de vrais téléphones. Les photos prises avant la révélation rejoignent l'album après, jusqu'à la clôture : en ligne le 6 octobre 2026, vérifié sur le serveur local seulement (ni MySQL ni Safari) |
 | Album des organisateurs (compteurs, révélation, ZIP, coups de cœur) | en ligne |
 | Administration (événements, QR codes, PDF des tables, photos, coups de cœur visibles) | en ligne |
-| Cartes imprimables : une carte de table par type d'événement, carte des organisateurs, logo au centre du QR code | en ligne ; imprimées et essayées le 6 octobre 2026 : les QR codes se lisent sur papier |
+| Cartes imprimables : une carte de table par type d'événement (recto et dos, en deux pages), carte des organisateurs, logo au centre du QR code | en ligne ; imprimées et essayées le 6 octobre 2026 : les QR codes se lisent sur papier |
 | Mot de passe oublié de l'administration | en ligne |
 | E-mails (bienvenue, ouverture, révélation, avertissement de suppression, adaptés au type d'événement) | en ligne ; les e-mails d'ouverture et de révélation qui échouent sont retentés pendant environ une journée, et un message dont la date est repoussée attend son heure sans s'épuiser (octobre 2026). Ces nouveaux essais n'ont jamais été éprouvés par un envoi réel : ils ont été vérifiés sur une base de test, pas sur la messagerie de l'hébergeur |
 | Mentions légales et politique de confidentialité | en ligne |

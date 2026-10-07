@@ -122,7 +122,7 @@ export function texteCourbe(
 }
 
 // Découpe en lignes ; la largeur peut dépendre du rang de la ligne (arcs du baptême).
-function couper(ctx: CanvasRenderingContext2D, texte: string, largeur: (rang: number) => number) {
+export function couper(ctx: CanvasRenderingContext2D, texte: string, largeur: (rang: number) => number) {
   const lignes: string[] = [];
   let ligne = "";
   for (const mot of texte.split(" ")) {
@@ -150,8 +150,10 @@ function tronquer(ctx: CanvasRenderingContext2D, texte: string, largeur: number)
 }
 
 // Répartit un texte sur autant de lignes qu'il y a de largeurs, en les remplissant au plus égal :
-// pas de mot orphelin sur la dernière. Renvoie null si aucune coupe ne tient.
-function equilibrer(ctx: CanvasRenderingContext2D, texte: string, largeurs: number[]) {
+// pas de mot orphelin sur la dernière. Renvoie null si aucune coupe ne tient. `paragraphe` ne s'en
+// sert que pour ses blocs centrés : un texte aligné à gauche qui veut des lignes équilibrées (les
+// étapes du verso) l'appelle directement.
+export function equilibrer(ctx: CanvasRenderingContext2D, texte: string, largeurs: number[]) {
   const mots = texte.split(" ");
   let meilleur: string[] | null = null;
   let ecart = Infinity;
@@ -466,6 +468,32 @@ export function plaque(
   }
 }
 
+// Petit QR code nu, pour le verso : celui du site du photographe. Ni plaque, ni cartouche
+// « OuiSnap » — sur un code de 19 mm le cartouche ne ferait qu'un mot d'un millimètre de haut, et
+// `coderQr()` monterait la correction d'erreurs pour l'absorber, donc ajouterait des modules et
+// rétrécirait chacun d'eux : exactement ce qu'il ne faut pas sur un code déjà au minimum physique.
+// Et ce code n'est pas celui de l'album : le signer « OuiSnap » serait faux.
+// Niveau Q et non H, pour la même raison : moins de modules, donc des modules plus gros. Le pas
+// est de 8 px au moins (0,68 mm), ce qui laisse de la marge au grossissement du point de 10 à 15 %
+// d'une imprimante à jet d'encre. Le code est centré dans son bloc réservé, et rien d'autre n'est
+// dessiné dans ce bloc ni dans les 5 modules de blanc qui l'entourent : c'est sa marge calme.
+export function petitQr(c: Carte, url: string, gauche: number, haut: number, bloc: number) {
+  const { ctx } = c;
+  const { modules } = QRCode.create(url, { errorCorrectionLevel: "Q" });
+  const pas = Math.max(8, Math.floor(bloc / modules.size));
+  const cote = pas * modules.size;
+  // Modules tracés un par un sur des pixels entiers, comme pour le grand code : une image étirée
+  // serait floue, et des bords flous sur des modules de 0,68 mm ne se décodent plus.
+  const x = gauche + Math.round((bloc - cote) / 2);
+  const y = haut + Math.round((bloc - cote) / 2);
+  ctx.fillStyle = SAPIN;
+  for (let rang = 0; rang < modules.size; rang++) {
+    for (let colonne = 0; colonne < modules.size; colonne++) {
+      if (modules.get(rang, colonne)) ctx.fillRect(x + colonne * pas, y + rang * pas, pas, pas);
+    }
+  }
+}
+
 // Signature de la maison, en pied : « Oui » droit en sapin, « Snap » italique en or, collés.
 export function logo(c: Carte, centre = 620, base = 1648, corps = 60) {
   const { ctx } = c;
@@ -647,14 +675,22 @@ export function bougie(c: Carte, b: Bougie) {
   ctx.stroke();
   ctx.lineWidth = 3;
   trait(ctx, 0, -b.hauteur, 0, -b.hauteur - meche);
-  ctx.translate(0, -b.hauteur - meche);
-  ctx.scale(b.flamme ?? 1, b.flamme ?? 1);
+  flamme(c, 0, -b.hauteur - meche, b.flamme ?? 1, CORAIL);
+  ctx.restore();
+}
+
+// La flamme d'une bougie, posée sur le bout de sa mèche : corail sur le gâteau, or au verso.
+export function flamme(c: Carte, x: number, y: number, echelle: number, couleur: string) {
+  const { ctx } = c;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(echelle, echelle);
   ctx.beginPath();
   ctx.moveTo(0, 2);
   ctx.bezierCurveTo(20, -2, 17, -28, 0, -50);
   ctx.bezierCurveTo(-17, -28, -20, -2, 0, 2);
   ctx.closePath();
-  ctx.fillStyle = CORAIL;
+  ctx.fillStyle = couleur;
   ctx.fill();
   ctx.restore();
 }
@@ -733,18 +769,40 @@ export function mire(c: Carte, cx: number, cy: number, echelle = 1) {
 export async function enregistrerPdf(
   canvas: HTMLCanvasElement,
   nom: string,
-  format: { largeur: number; hauteur: number; places: [number, number][]; coupes: [number, number, number, number][] },
+  format: {
+    largeur: number;
+    hauteur: number;
+    places: [number, number][];
+    coupes: [number, number, number, number][];
+    // Le dos des mêmes cartes, sur une seconde page. Les cartes d'une feuille
+    // sont identiques entre elles et la grille est symétrique : le verso
+    // reprend donc les places du recto, sans miroir. Cela suppose une
+    // imprimante qui retourne la feuille sur le bord long, le réglage courant ;
+    // sur le bord court, les dos tomberaient en face, mais tête en bas.
+    verso?: HTMLCanvasElement;
+  },
 ) {
   const { jsPDF } = await import("jspdf");
-  const image = canvas.toDataURL("image/png");
   const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  for (const [x, y] of format.places) {
-    pdf.addImage(image, "PNG", x, y, format.largeur, format.hauteur, "carte", "FAST");
+  const poser = (face: HTMLCanvasElement, alias: string, coupes: boolean) => {
+    const image = face.toDataURL("image/png");
+    for (const [x, y] of format.places) {
+      pdf.addImage(image, "PNG", x, y, format.largeur, format.hauteur, alias, "FAST");
+    }
+    if (!coupes) return;
+    // Gris soutenu : plus clair, le trait de coupe disparaît à l'impression.
+    pdf.setDrawColor(115);
+    pdf.setLineWidth(0.15);
+    pdf.setLineDashPattern([1.5, 1.5], 0);
+    for (const [x1, y1, x2, y2] of format.coupes) pdf.line(x1, y1, x2, y2);
+  };
+  poser(canvas, "carte", true);
+  if (format.verso) {
+    pdf.addPage();
+    // Traits de coupe sur la page des rectos seulement : on coupe en les regardant. Un recto-verso
+    // de bureau se décale de 2 à 3 mm, et des pointillés décalés d'autant tomberaient à l'intérieur
+    // de la carte finie, le long du bord des quatre cartes.
+    poser(format.verso, "verso", false);
   }
-  // Gris soutenu : plus clair, le trait de coupe disparaît à l'impression.
-  pdf.setDrawColor(115);
-  pdf.setLineWidth(0.15);
-  pdf.setLineDashPattern([1.5, 1.5], 0);
-  for (const [x1, y1, x2, y2] of format.coupes) pdf.line(x1, y1, x2, y2);
   pdf.save(nom);
 }

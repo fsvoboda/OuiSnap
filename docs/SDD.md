@@ -266,7 +266,7 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 | [`qr.ts`](../src/lib/qr.ts) | `guestUrl()` (`/e/?c=CODE`), `albumUrl()` (`/album/?k=CLÉ`, l'album privé), `qrDataUrl()` (QR code sans logo, couleur `#1a2620` sur blanc) et `uploadEventQr()`, qui dépose sur le serveur l'image du QR code des invités pour les e-mails. Ce QR code des e-mails, celui de la page des organisateurs et celui du plein écran n'ont pas de logo. |
 | [`shutter.ts`](../src/lib/shutter.ts) | Son d'obturateur synthétisé, sans fichier audio. |
 | [`card-kit.ts`](../src/lib/card-kit.ts) | Outils de dessin communs aux cartes imprimables : couleurs, canevas, textes (espacé, courbe, règle du nom, paragraphe), QR code tracé module par module avec son cartouche, plaque, logo, motifs, écriture du PDF (voir [5.9](#59-cartes-imprimables)). |
-| [`table-card.ts`](../src/lib/table-card.ts) | PDF des tables : `drawTableCard()` dessine une carte A6 (1240 × 1748 px) selon la nature de l'événement, `downloadTablePdf()` la pose quatre fois sur une page A4. Fichier `ouisnap-tables-<code>.pdf`. |
+| [`table-card.ts`](../src/lib/table-card.ts) | PDF des tables : `drawTableCard()` dessine le recto d'une carte A6 (1240 × 1748 px) selon la nature de l'événement, `drawTableBack()` son dos ; `downloadTablePdf()` pose le recto quatre fois sur une page A4 puis le dos quatre fois sur une seconde page. Fichier `ouisnap-tables-<code>.pdf`. |
 | [`organizer-card.ts`](../src/lib/organizer-card.ts) | PDF des organisateurs : `drawOrganizerCard()` dessine deux volets côte à côte (2480 × 1754 px, A5 paysage), `downloadOrganizerPdf()` le pose deux fois sur une page A4. Fichier `ouisnap-organisateurs-<code>.pdf`. |
 
 ### 5.4 Session de l'invité
@@ -448,16 +448,18 @@ Les e-mails et les PDF des cartes reprennent ces couleurs en dur (`public/api/ma
 
 ### 5.9 Cartes imprimables
 
-Trois fichiers de `src/lib` fabriquent les PDF des cartes, entièrement dans le navigateur de l'administrateur : aucune donnée n'est envoyée au serveur et aucune image n'est ajoutée au dépôt. `card-kit.ts` porte les outils communs, `table-card.ts` les quatre cartes de table, `organizer-card.ts` la carte des organisateurs. Les règles de produit correspondantes sont dans le PDD (RG-96 à RG-104).
+Trois fichiers de `src/lib` fabriquent les PDF des cartes, entièrement dans le navigateur de l'administrateur : aucune donnée n'est envoyée au serveur et aucune image n'est ajoutée au dépôt. `card-kit.ts` porte les outils communs, `table-card.ts` les quatre cartes de table (recto et dos), `organizer-card.ts` la carte des organisateurs. Les règles de produit correspondantes sont dans le PDD (RG-96 à RG-104).
 
 **Canevas 2D et polices.** Chaque carte est tracée sur un `<canvas>` blanc (`nouvelleCarte()`). Avant tout dessin, `document.fonts.load()` charge Cormorant Garamond (500 et 500 italique) et Montserrat (500 et 600), lues dans les variables CSS du site : sans cela le premier dessin partirait en police de repli. Les coordonnées sont en pixels à 300 points par pouce.
 
 | Carte | Canevas | Taille réelle | Pose dans le PDF A4 (portrait) |
 |---|---|---|---|
-| Table | 1240 × 1748 px | A6, 105 × 148,5 mm | quatre fois : (0, 0), (105, 0), (0, 148,5), (105, 148,5) ; coupes : un trait vertical à x = 105 et un horizontal à y = 148,5 |
+| Table | 1240 × 1748 px | A6, 105 × 148,5 mm | quatre fois : (0, 0), (105, 0), (0, 148,5), (105, 148,5) ; coupes : un trait vertical à x = 105 et un horizontal à y = 148,5. Page 2 : le dos, aux mêmes quatre places, sans coupes |
 | Organisateurs | 2480 × 1754 px (deux volets de 1240 px) | A5 paysage, 210 × 148,5 mm | deux fois : (0, 0) et (0, 148,5) ; coupe : un trait horizontal à y = 148,5 |
 
 **Pose dans le PDF** (`enregistrerPdf()`). `jspdf` est chargé à la demande (`import()`), pour ne rien coûter aux autres pages. Le canevas est converti en PNG (le trait sur blanc s'y compresse bien, sans le halo du JPEG autour du QR code), puis posé à chaque place avec `addImage` (alias `carte`, compression `FAST`). Les traits de coupe sont des pointillés (1,5 mm de trait, 1,5 mm de blanc) gris 115, épaisseur 0,15 mm : plus clairs, ils disparaîtraient à l'impression. Le fichier est enregistré par `pdf.save()`.
+
+**Recto-verso** (paramètre facultatif `verso` de `enregistrerPdf()`). S'il est fourni, une seconde page (`addPage()`) reçoit le canevas du dos, posé aux mêmes places que le recto (alias `verso`), sans miroir ni rotation : les quatre cartes d'une feuille étant identiques et la grille 2 × 2 symétrique, chaque dos tombe derrière une carte quand l'imprimante retourne la feuille sur le bord long, le réglage courant. Le retournement sur le bord court n'est pas géré : l'interface n'a aucune option, et le propriétaire décidera s'il en faut une après un essai d'impression. Les traits de coupe ne sont tracés que sur la page des recto : une imprimante recto-verso décale le dos de 2 à 3 mm, et des pointillés tracés sur les dos tomberaient à l'intérieur de la carte finie. Les PDF sans `verso` (organisateurs) restent d'une page.
 
 **Volet droit de la carte des organisateurs.** Les motifs de `card-kit.ts` sont écrits pour une carte de table et prennent un décalage horizontal `dx`. La carte des organisateurs les reprend avec `dx = 1240` sur le volet droit ; le volet gauche est le carton crème, dessiné par `carton()`.
 
@@ -474,11 +476,15 @@ Trois fichiers de `src/lib` fabriquent les PDF des cartes, entièrement dans le 
 
 **Dessins par nature** (`table-card.ts`, table `dessins` de `drawTableCard()`, clé donnée par `kindKey()`) : mariage (deux alliances par `alliances()`, filets d'or, plaque à contour doré de 3 px), baptême (`ondes()`, `goutte()`, textes courbes), anniversaire (`bougie()`, sept bougies, `glacage()`, `presentoir()`, plaque à contour sapin de 5 px), autre (`viseur()`, `mire()`, repères de mi-côté, déclencheur dessiné). Après le dessin de la nature, `logo()` signe le pied de la carte. L'étiquette est `kindOf(kind).album` en capitales, avec l'apostrophe typographique.
 
+**Dos de la carte de table** (`table-card.ts`, `drawTableBack(kind)`, canevas de 1240 × 1748 px comme le recto). Sans plaque ni motif à l'échelle de la carte, sur deux axes : le centre (x = 620) pour le slogan, le logo, la réassurance, le paragraphe et la phrase finale ; la gauche (x = 196 et 254) pour les étapes. Colonne de texte de x = 176 à 1064 (888 px, 75 mm), soit 15 mm de blanc de chaque côté pour absorber le décalage du recto-verso. Deux encres, sapin et or. Ordre de tracé : filets (2,5 px) et fleuron, anneaux des étapes, petit QR code, puis les textes. De haut en bas : slogan en deux lignes (`SLOGAN`, corps 112) et `logo()` ; trois étapes (`ETAPES`, `texteEtape()` : anneau doré, chiffre, deux lignes équilibrées au corps 40) ; `REASSURANCE` (corps 30, 28 si elle dépasse 888 px) ; filet avec fleuron de la nature (`FLEURONS` : deux anneaux, `goutte()`, bougie, `mire()`) ; paragraphe de `EXPLICATIONS` (seul texte qui varie, corps 32 puis 30, cinq lignes au plus, positionné par `basePremiereLigne()`) ; `FINALE` (corps 52) ; pied avec `petitQr()` et le libellé « Le photographe de votre événement » et « pourunouieternel.fr ».
+
+**Petit QR code du dos** (`petitQr(c, url, gauche, haut, bloc)` dans `card-kit.ts`). Il mène à `https://www.pourunouieternel.fr` (`SITE_PHOTOGRAPHE`). Il est tracé module par module comme le grand code, mais sans plaque ni cartouche « OuiSnap » : sur 19 mm, le cartouche ferait un mot d'un millimètre de haut, et `coderQr()` monterait la correction d'erreurs, donc ajouterait des modules plus petits ; et signer « OuiSnap » un code qui n'ouvre pas l'album serait faux. Niveau de correction Q (`QRCode.create`). Le pas est de 8 px au moins (0,68 mm), le code est centré dans un bloc réservé de 236 px (environ 19,6 mm) posé en (176, 1410), et rien d'autre n'est dessiné dans ce bloc.
+
 **Carte des organisateurs** (`organizer-card.ts`). `drawOrganizerCard()` appelle `carton()` (volet gauche : pastille « POUR … », titre « Votre album » dont le corps baisse de 190 px vers 120 px pour tenir en 930 px, nom par `nomDroit()`, rubriques « AVANT LA RÉVÉLATION », « APRÈS », « RÉVÉLATION DE L'ALBUM », consigne de confidentialité), puis le volet de la nature (table `VOLETS`), puis le logo (corps 78 px) et « par PourUnOuiEternel » dessous. La date vient de `texteRevelation()` : heure de Paris (`Intl.DateTimeFormat`, fuseau `Europe/Paris`), sans année, « er » du 1er en exposant ; `revealAt` nul ou illisible : « Vous serez prévenus par e-mail. » ; `revealed` vrai ou date passée : « Votre album est dévoilé. » ; la ligne baisse de 72 px à 56 px pour tenir en 930 px.
 
 **Règle du nom de fichier.** Les fichiers téléchargés portent le code de l'événement : `ouisnap-tables-<code>.pdf`, `ouisnap-organisateurs-<code>.pdf`, `ouisnap-qr-<code>.png`, `ouisnap-qr-organisateurs-<code>.png`. Jamais la clé de l'album, qui est le secret du lien privé (voir [10.3](#103-jetons-des-invités-et-clé-dalbum)).
 
-**Limites** (voir aussi [15.1](#151-limites-de-fonctionnement)). Les cartes ont été imprimées et leurs QR codes lus sur papier le 6 octobre 2026. Les QR codes avaient aussi été relus par un détecteur dans le navigateur, y compris réduits et floutés. Le rendu n'a pas été vérifié sur Safari. Le tracé emploie `roundRect()` du canevas, récent.
+**Limites** (voir aussi [15.1](#151-limites-de-fonctionnement)). Les cartes (recto) ont été imprimées et leurs QR codes lus sur papier le 6 octobre 2026 ; le dos et son petit QR code n'ont pas encore été essayés sur papier. Les QR codes avaient aussi été relus par un détecteur dans le navigateur, y compris réduits et floutés. Le rendu n'a pas été vérifié sur Safari. Le tracé emploie `roundRect()` du canevas, récent.
 
 ---
 
@@ -1636,6 +1642,7 @@ Uniquement ce que le code ou le README d'origine confirment.
 | L'état de la tâche peut être faussé par un appel web de `cron.php` (signalé « par un appel web ») | `cron.php` |
 | Pas d'application installable ni de mode hors ligne : pas de service worker, donc pas d'envoi en arrière-plan page fermée | Aucun manifeste ni service worker |
 | Cartes imprimables : rendu non vérifié sur Safari. Le tracé emploie `roundRect()` du canevas et les polices chargées par `document.fonts.load()` | `card-kit.ts` |
+| Cartes de table : le dos suppose une imprimante qui retourne la feuille sur le bord long ; le bord court n'est pas géré (aucune option). Les dos n'ont pas été essayés sur papier | `enregistrerPdf()` dans `card-kit.ts`, `downloadTablePdf()` dans `table-card.ts` |
 | Cartes imprimables : le niveau de correction d'erreurs du QR code dépend de la longueur de l'adresse (H, Q ou M) ; sans niveau qui convienne, le code est tracé sans logo | `coderQr()` dans `card-kit.ts` |
 | Un seul administrateur | `lib.php` |
 | Paiement : non réalisé, « à décider » | README d'origine |
@@ -1722,10 +1729,10 @@ Aucune de ces pistes n'est décidée. Elles découlent directement des limites c
 | Un message d'erreur de l'API | Le fichier PHP de l'endpoint, ou `public/api/lib.php` pour les messages communs |
 | Les couleurs ou les polices | `src/app/globals.css`, `src/app/layout.tsx` ; puis `public/api/mail.php` et `src/lib/card-kit.ts`, qui ont leurs propres valeurs |
 | Le logo | `src/components/logo.tsx`, `src/app/icon.svg` ; en-tête des e-mails dans `mail.php` ; carte de table et carte des organisateurs dans `src/lib/card-kit.ts` (`logo()`) |
-| Le dessin ou les textes d'une carte de table (PDF) | `src/lib/table-card.ts` ; ses outils de dessin : `src/lib/card-kit.ts` |
+| Le dessin ou les textes d'une carte de table (PDF), recto (`drawTableCard()`) ou dos (`drawTableBack()`) | `src/lib/table-card.ts` ; ses outils de dessin : `src/lib/card-kit.ts` |
 | La carte des organisateurs (PDF) : textes, date de révélation, motif | `src/lib/organizer-card.ts` ; outils de dessin : `src/lib/card-kit.ts` |
 | Le nom de fichier d'un PDF ou d'une image de QR code | `downloadTablePdf()` dans `src/lib/table-card.ts`, `downloadOrganizerPdf()` dans `src/lib/organizer-card.ts`, `imageName` dans `src/components/admin/event-links.tsx` |
-| La taille de la page, la pose des cartes et les traits de coupe | `enregistrerPdf()` dans `src/lib/card-kit.ts` ; les places et les coupes de chaque PDF dans `downloadTablePdf()` et `downloadOrganizerPdf()` |
+| La taille de la page, la pose des cartes (recto et dos) et les traits de coupe | `enregistrerPdf()` dans `src/lib/card-kit.ts` ; les places et les coupes de chaque PDF dans `downloadTablePdf()` et `downloadOrganizerPdf()` |
 | Le logo au centre du QR code, son cartouche, le niveau de correction d'erreurs | `coderQr()` et `tracerQr()` dans `src/lib/card-kit.ts` |
 | La règle de réduction du nom sur les cartes | `composerNom()` et ses constantes dans `src/lib/card-kit.ts` |
 | Le bloc « QR code et liens » de l'administration (cases, boutons, liens) | `src/components/admin/event-links.tsx` |
