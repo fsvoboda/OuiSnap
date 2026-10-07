@@ -60,6 +60,7 @@ function QrCase({
   imageName,
   imageLabel,
   pdfLabel,
+  printNote,
   onPdf,
   isPrivate = false,
 }: {
@@ -70,6 +71,7 @@ function QrCase({
   imageName: string;
   imageLabel: string;
   pdfLabel: string;
+  printNote?: string;
   onPdf: () => Promise<void>;
   isPrivate?: boolean;
 }) {
@@ -142,6 +144,7 @@ function QrCase({
           </a>
         )}
       </div>
+      {printNote && <p className="text-xs leading-relaxed text-brume">{printNote}</p>}
       {printError && (
         <p role="alert" className="text-sm text-[#f0a39e]">
           Le PDF n&apos;a pas pu être créé. Réessayez.
@@ -161,12 +164,13 @@ export function EventLinks({ event }: { event: AdminEvent }) {
       <div className="grid gap-4 md:grid-cols-2">
         <QrCase
           title="QR code des invités"
-          hint="À poser sur les tables : les invités le scannent pour photographier. Le PDF contient quatre cartes par page A4, à découper."
+          hint="À poser sur les tables : les invités le scannent pour photographier. Le PDF contient quatre cartes A6 à découper, et leur dos sur une seconde page."
           url={guestUrl}
           alt={`QR code des invités de l'album ${event.title}`}
           imageName={`ouisnap-qr-${event.code}.png`}
           imageLabel="QR code des invités seul"
           pdfLabel="PDF pour les tables"
+          printNote="À imprimer en recto-verso, retournement sur le bord long, à l'échelle 100 % (surtout pas « ajuster à la page » : les QR codes en dépendent). Faites une feuille d'essai avant la série."
           onPdf={() => downloadTablePdf({ title: event.title, kind: event.kind, url: guestUrl, code: event.code })}
         />
         {privateUrl && (
