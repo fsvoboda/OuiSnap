@@ -459,7 +459,7 @@ Trois fichiers de `src/lib` fabriquent les PDF des cartes, entièrement dans le 
 
 **Pose dans le PDF** (`enregistrerPdf()`). `jspdf` est chargé à la demande (`import()`), pour ne rien coûter aux autres pages. Le canevas est converti en PNG (le trait sur blanc s'y compresse bien, sans le halo du JPEG autour du QR code), puis posé à chaque place avec `addImage` (alias `carte`, compression `FAST`). Les traits de coupe sont des pointillés (1,5 mm de trait, 1,5 mm de blanc) gris 115, épaisseur 0,15 mm : plus clairs, ils disparaîtraient à l'impression. Le fichier est enregistré par `pdf.save()`.
 
-**Recto-verso** (paramètre facultatif `verso` de `enregistrerPdf()`). S'il est fourni, une seconde page (`addPage()`) reçoit le canevas du dos, posé aux mêmes places que le recto (alias `verso`), sans miroir ni rotation : les quatre cartes d'une feuille étant identiques et la grille 2 × 2 symétrique, chaque dos tombe derrière une carte quand l'imprimante retourne la feuille sur le bord long, le réglage courant. Le retournement sur le bord court n'est pas géré : l'interface n'a aucune option, et le propriétaire décidera s'il en faut une après un essai d'impression. Les traits de coupe ne sont tracés que sur la page des recto : une imprimante recto-verso décale le dos de 2 à 3 mm, et des pointillés tracés sur les dos tomberaient à l'intérieur de la carte finie. Les PDF sans `verso` (organisateurs) restent d'une page.
+**Recto-verso** (paramètre facultatif `verso` de `enregistrerPdf()`). S'il est fourni, une seconde page (`addPage()`) reçoit le canevas du dos, posé aux mêmes places que le recto (alias `verso`), sans miroir ni rotation : les quatre cartes d'une feuille étant identiques et la grille 2 × 2 symétrique, chaque dos tombe derrière une carte quand l'imprimante retourne la feuille sur le bord long, le réglage courant. Essayé sur papier le 7 octobre 2026 : les dos tombent en face. Le retournement sur le bord court n'est pas géré : l'interface n'a aucune option, et personne ne l'a demandée jusqu'ici. Les traits de coupe ne sont tracés que sur la page des recto : une imprimante recto-verso décale le dos de 2 à 3 mm, et des pointillés tracés sur les dos tomberaient à l'intérieur de la carte finie. Les PDF sans `verso` (organisateurs) restent d'une page.
 
 **Volet droit de la carte des organisateurs.** Les motifs de `card-kit.ts` sont écrits pour une carte de table et prennent un décalage horizontal `dx`. La carte des organisateurs les reprend avec `dx = 1240` sur le volet droit ; le volet gauche est le carton crème, dessiné par `carton()`.
 
@@ -484,7 +484,7 @@ Trois fichiers de `src/lib` fabriquent les PDF des cartes, entièrement dans le 
 
 **Règle du nom de fichier.** Les fichiers téléchargés portent le code de l'événement : `ouisnap-tables-<code>.pdf`, `ouisnap-organisateurs-<code>.pdf`, `ouisnap-qr-<code>.png`, `ouisnap-qr-organisateurs-<code>.png`. Jamais la clé de l'album, qui est le secret du lien privé (voir [10.3](#103-jetons-des-invités-et-clé-dalbum)).
 
-**Limites** (voir aussi [15.1](#151-limites-de-fonctionnement)). Les cartes (recto) ont été imprimées et leurs QR codes lus sur papier le 6 octobre 2026 ; le dos et son petit QR code n'ont pas encore été essayés sur papier. Les QR codes avaient aussi été relus par un détecteur dans le navigateur, y compris réduits et floutés. Le rendu n'a pas été vérifié sur Safari. Le tracé emploie `roundRect()` du canevas, récent.
+**Limites** (voir aussi [15.1](#151-limites-de-fonctionnement)). Les cartes (recto) ont été imprimées et leurs QR codes lus sur papier le 6 octobre 2026, le dos le 7 octobre 2026, en recto-verso avec un retournement sur le bord long. Les QR codes avaient aussi été relus par un détecteur dans le navigateur, y compris réduits et floutés. Le rendu n'a pas été vérifié sur Safari. Le tracé emploie `roundRect()` du canevas, récent.
 
 ---
 
@@ -1642,7 +1642,7 @@ Uniquement ce que le code ou le README d'origine confirment.
 | L'état de la tâche peut être faussé par un appel web de `cron.php` (signalé « par un appel web ») | `cron.php` |
 | Pas d'application installable ni de mode hors ligne : pas de service worker, donc pas d'envoi en arrière-plan page fermée | Aucun manifeste ni service worker |
 | Cartes imprimables : rendu non vérifié sur Safari. Le tracé emploie `roundRect()` du canevas et les polices chargées par `document.fonts.load()` | `card-kit.ts` |
-| Cartes de table : le dos suppose une imprimante qui retourne la feuille sur le bord long ; le bord court n'est pas géré (aucune option). Les dos n'ont pas été essayés sur papier | `enregistrerPdf()` dans `card-kit.ts`, `downloadTablePdf()` dans `table-card.ts` |
+| Cartes de table : le dos suppose une imprimante qui retourne la feuille sur le bord long, essayé sur papier le 7 octobre 2026 ; le bord court n'est pas géré (aucune option) | `enregistrerPdf()` dans `card-kit.ts`, `downloadTablePdf()` dans `table-card.ts` |
 | Cartes imprimables : le niveau de correction d'erreurs du QR code dépend de la longueur de l'adresse (H, Q ou M) ; sans niveau qui convienne, le code est tracé sans logo | `coderQr()` dans `card-kit.ts` |
 | Un seul administrateur | `lib.php` |
 | Paiement : non réalisé, « à décider » | README d'origine |
