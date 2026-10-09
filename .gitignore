@@ -55,3 +55,6 @@ next-env.d.ts
 
 # notes de travail des études (le rapport final est dans reports/)
 /research_notes/
+
+# notes de travail des skills (listes de tâches, spécifications en cours)
+/.scratch/
