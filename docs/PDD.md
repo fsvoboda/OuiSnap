@@ -10,7 +10,7 @@ Ce document décrit les processus métier de OuiSnap tels qu'ils fonctionnent au
 
 ### 1.2 Périmètre
 
-Du formulaire de demande de la vitrine jusqu'à la suppression d'un album, pour les quatre types d'acteurs (visiteur, administrateur, organisateurs, invités). Le paiement et le contrat avec le client n'en font pas partie (voir le chapitre 6).
+Du formulaire de demande de la vitrine jusqu'à la suppression d'un album, pour les quatre types d'acteurs (visiteur, administrateur, organisateurs, invités). Le service est gratuit au lancement : le paiement et le contrat avec le client n'en font pas partie (voir le chapitre 6).
 
 ### 1.3 Documents liés
 
@@ -790,7 +790,7 @@ Les résultats sont lus dans `.playwright-mcp/resultats.json`, un fichier local 
 
 Ce qui n'existe pas encore ou qui n'est pas confirmé :
 
-- **Paiement** : pas de paiement dans l'appli ; « à décider » (README précédent).
+- **Paiement** : OuiSnap est gratuit au lancement (choix de Franck, 9 octobre 2026) et l'appli ne comporte aucun paiement. Une offre payante reste possible plus tard ; elle n'est ni décidée ni décrite ici.
 - **Tâche planifiée** (`cron.php`) : à créer chez l'hébergeur (une fois par heure ; la marche à suivre est dans le SDD). Tant qu'elle n'est pas créée, ou qu'elle ne passe plus, l'administration l'écrit en rouge (RG-115) et les e-mails d'ouverture et de révélation attendent la première visite utile (RG-60). Surtout, **aucun album et aucune demande ne sont supprimés** sans elle, et seulement si l'hébergeur la lance en ligne de commande, pas par une adresse web (RG-125) : l'administration l'écrit en rouge (RG-126).
 - **Suppression automatique jamais éprouvée en vrai** : vérifiée sur une base de test (154 contrôles) et dans le navigateur en local, jamais sur MySQL ni avec un envoi réel du préavis (M7, M8). Dans le doute, elle ne supprime rien (RG-121). Si l'envoi d'e-mails échoue durablement, l'album n'est jamais supprimé et le préavis est retenté chaque jour (RG-124) : la promesse des six mois n'est alors pas tenue, mais aucune photo n'est perdue par surprise.
 - **Six mois « au plus tard »** : le délai de sept jours après l'envoi du préavis (RG-121) peut repousser de quelques jours une suppression, notamment pour les albums déjà échus à la mise en ligne. La politique de confidentialité le dit.

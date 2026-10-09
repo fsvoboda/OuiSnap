@@ -162,10 +162,10 @@ Les mentions légales et la politique de confidentialité sont en ligne, liées 
 | Mot de passe oublié de l'administration | en ligne |
 | E-mails (bienvenue, ouverture, révélation, avertissement de suppression, adaptés au type d'événement) | en ligne ; les e-mails d'ouverture et de révélation qui échouent sont retentés pendant environ une journée, et un message dont la date est repoussée attend son heure sans s'épuiser (octobre 2026). Ces nouveaux essais n'ont jamais été éprouvés par un envoi réel : ils ont été vérifiés sur une base de test, pas sur la messagerie de l'hébergeur |
 | Mentions légales et politique de confidentialité | en ligne |
-| Tests de bout en bout Playwright (4 scénarios : mariage, mot de passe, types d'événement, reprise de l'envoi) | en place ; au dernier passage de chacun (4 et 5 octobre 2026), les quatre scénarios réussissent |
-| Tâche planifiée (e-mails sans visite du site, suppressions automatiques) | à créer chez l'hébergeur (une fois par heure, la marche à suivre est dans le SDD) ; son état est visible dans l'administration, qui alerte tant qu'elle n'est pas passée |
+| Tests de bout en bout Playwright (4 scénarios : mariage, mot de passe, types d'événement, reprise de l'envoi) | en place ; au dernier passage, le 7 octobre 2026, les quatre scénarios réussissent (239 contrôles) |
+| Tâche planifiée (e-mails sans visite du site, suppressions automatiques) | en service chez l'hébergeur depuis le 6 octobre 2026, une fois par heure ; son état est visible dans l'administration, qui alerte si elle cesse de passer |
 | Suppression automatique des albums six mois après la clôture, avec préavis de trente jours, et suppression des demandes de la vitrine après trois ans | en ligne depuis le 6 octobre 2026. Vérifiée sur une base de test (154 contrôles) et dans le navigateur en local ; jamais éprouvée sur la vraie base de l'hébergeur ni par un envoi réel d'avertissement. Elle ne fonctionne que si l'hébergeur lance bien la tâche planifiée (voir ci-dessus) : l'administration l'affiche |
-| Paiement | à décider |
+| Paiement | OuiSnap est gratuit au lancement (choix de Franck, 9 octobre 2026). Rien n'est facturé, ni aux organisateurs ni aux invités, et l'appli ne comporte aucun paiement. Une offre payante reste possible plus tard, elle n'est pas décidée |
 
 ## Pour aller plus loin
 
