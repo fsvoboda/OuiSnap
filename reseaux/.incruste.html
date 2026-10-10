@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face { font-family:"Cormorant Garamond"; font-style:normal; font-weight:300 700; src:url("../flyer/assets/fonts/cormorant-garamond-latin.woff2") format("woff2"); }
+@font-face { font-family:"Cormorant Garamond"; font-style:italic; font-weight:300 700; src:url("../flyer/assets/fonts/cormorant-garamond-italic-latin.woff2") format("woff2"); }
+* { margin:0; padding:0; }
+body { width:1080px; height:1350px; overflow:hidden; position:relative; }
+img.fond { display:block; width:1080px; height:1350px; }
+/* Le vrai code de la page de présentation, posé sur celui qu'avait inventé le générateur d'images.
+   Fondu en multiplication pour garder le grain du papier, léger flou pour rester dans la photo. */
+.qr { position:absolute; left:424px; top:466px; width:275px; height:263px;
+      mix-blend-mode:multiply; filter:blur(0.6px); }
+.qr img { width:100%; height:100%; display:block; }
+.cartouche { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+      background:#fff; padding:5px 10px; font-family:"Cormorant Garamond",serif; font-size:23px;
+      font-weight:500; color:#1a2620; white-space:nowrap; line-height:1; }
+.cartouche i { font-style:italic; color:#b8924a; }
+</style></head><body>
+<img class="fond" src="insta-1-01-carte.png">
+<div class="qr"><img src="qr-vitrine.svg"><span class="cartouche">Oui<i>Snap</i></span></div>
+</body></html>
