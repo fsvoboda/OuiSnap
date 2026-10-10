@@ -1,0 +1,28 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="commun.css"><style>
+/* Vue 4 : les trois gestes, numérotés, alignés à gauche. */
+.vue { justify-content: center; }
+.titre { font-family: var(--serif); font-size: 62px; font-weight: 500; line-height: 1.05; margin-bottom: 76px; }
+.titre em { font-style: italic; color: var(--or-fonce); }
+.etapes { display: flex; flex-direction: column; gap: 58px; }
+.etape { display: grid; grid-template-columns: 112px 1fr; align-items: start; }
+.etape .n { font-family: var(--sans); font-size: 46px; font-weight: 600; line-height: 1.1; color: var(--or); }
+.etape p { font-size: 38px; font-weight: 500; line-height: 1.35; padding-top: 4px; }
+.filet { height: 1px; background: var(--or); opacity: 0.45; margin: 76px 0 34px; }
+.pied { display: flex; align-items: baseline; justify-content: space-between; }
+.pied .logo { font-size: 38px; }
+.pied .site { font-size: 20px; font-weight: 600; letter-spacing: 0.1em; color: var(--or-fonce); }
+</style></head><body>
+<div class="vue claire">
+  <h1 class="titre">En trois gestes,<br><em>et c’est tout.</em></h1>
+  <div class="etapes">
+    <div class="etape"><span class="n">1</span><p>Ils ouvrent l’appareil photo<br>et visent le code</p></div>
+    <div class="etape"><span class="n">2</span><p>Ils touchent le lien<br>et donnent leur prénom</p></div>
+    <div class="etape"><span class="n">3</span><p>Ils photographient la fête</p></div>
+  </div>
+  <div class="filet"></div>
+  <div class="pied">
+    <span class="logo">Oui<i>Snap</i></span>
+    <span class="site">ouisnap.pourunouieternel.fr</span>
+  </div>
+</div>
+</body></html>

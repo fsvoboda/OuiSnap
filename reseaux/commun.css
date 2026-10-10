@@ -1,0 +1,29 @@
+/* Vues graphiques du carrousel Instagram. Canevas 1080 x 1350 (vertical 4:5).
+   Mêmes polices et mêmes couleurs que les cartes de table et le flyer. */
+@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 300 700; src: url("../flyer/assets/fonts/cormorant-garamond-latin.woff2") format("woff2"); }
+@font-face { font-family: "Cormorant Garamond"; font-style: italic; font-weight: 300 700; src: url("../flyer/assets/fonts/cormorant-garamond-italic-latin.woff2") format("woff2"); }
+@font-face { font-family: "Montserrat"; font-style: normal; font-weight: 100 900; src: url("../flyer/assets/fonts/montserrat-latin.woff2") format("woff2"); }
+
+:root {
+  --sapin: #1a2620;
+  --or: #b8924a;
+  --or-fonce: #7d5f24;
+  --creme: #f5f0e6;
+  --serif: "Cormorant Garamond", Georgia, serif;
+  --sans: "Montserrat", system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1080px; height: 1350px; overflow: hidden; }
+body { font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+
+/* Zone sûre : rien d'essentiel à moins de 90 px du bord. */
+.vue { width: 1080px; height: 1350px; padding: 90px; display: flex; flex-direction: column; }
+.vue.sombre { background: var(--sapin); color: var(--creme); }
+.vue.claire { background: var(--creme); color: var(--sapin); }
+
+.logo { font-family: var(--serif); font-weight: 500; white-space: nowrap; }
+.logo i { font-style: italic; color: var(--or); }
+
+.signature { margin-top: auto; display: flex; align-items: baseline; justify-content: center; gap: 18px; }
+.signature .logo { font-size: 40px; }
+.signature .site { font-size: 19px; font-weight: 500; letter-spacing: 0.08em; color: var(--or); }
