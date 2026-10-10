@@ -77,7 +77,7 @@ export default function MentionsLegales() {
 
       <Section titre="Données personnelles">
         <p>
-          Le traitement des données (prénoms, adresses e-mail, photos) est détaillé dans la{" "}
+          Le traitement des données (pseudos, adresses e-mail, photos) est détaillé dans la{" "}
           <Link href="/confidentialite/">politique de confidentialité</Link>.
         </p>
       </Section>

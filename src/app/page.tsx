@@ -141,7 +141,7 @@ export default function Home() {
                   </div>
                   <p className="leading-relaxed text-brume">
                     Une carte posée sur chaque table. L&apos;invité la vise avec son téléphone,
-                    donne son prénom, et il peut photographier.
+                    choisit un pseudo, et il peut photographier.
                   </p>
                 </div>
                 <Image

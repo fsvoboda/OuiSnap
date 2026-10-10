@@ -1,7 +1,7 @@
 // Test de bout en bout OuiSnap, joué via le MCP Playwright (browser_run_code_unsafe, paramètre filename = .claude/skills/pw/scripts/e2e-types.js).
 // Prérequis : `npm run local` (site + API PHP sur SQLite, port 8000, mot de passe admin : admin).
 // Parcours : pour chaque type (mariage, baptême, anniversaire, autre) : création par l'admin, album des organisateurs avant révélation,
-// page invité (accueil, prénom vide, 1 photo, « Mes photos »), QR plein écran, révélation, album après, album vide. Les textes non adaptés sont des « constats ».
+// page invité (accueil, pseudo vide, 1 photo, « Mes photos »), QR plein écran, révélation, album après, album vide. Les textes non adaptés sont des « constats ».
 async (page) => {
   const scenario = async (page) => {
   const BASE = 'http://localhost:8000';
@@ -20,11 +20,13 @@ async (page) => {
     p.on('pageerror', (e) => errors.push(`[${who}] ${e.message}`));
   };
   // Table de référence recopiée de src/lib/kinds.ts (KINDS) : label, album, seenBy, nameNeeded.
+  // L'invitation à choisir un pseudo (INVITE_PSEUDO) est la même pour toutes les natures.
+  const INVITE_PSEUDO = 'Prénom, surnom, ce que vous voulez.';
   const KINDS = {
-    mariage: { label: 'Mariage', album: 'Album des mariés', seenBy: 'Les mariés verront qui a pris des photos.', nameNeeded: 'Indiquez votre prénom pour que les mariés sachent qui a photographié.', org: 'Léa et Tom' },
-    bapteme: { label: 'Baptême', album: 'Album du baptême', seenBy: 'La famille verra qui a pris des photos.', nameNeeded: 'Indiquez votre prénom pour que la famille sache qui a photographié.', org: 'Sophie et Marc' },
-    anniversaire: { label: 'Anniversaire', album: "Album d'anniversaire", seenBy: 'Les organisateurs verront qui a pris des photos.', nameNeeded: 'Indiquez votre prénom pour que les organisateurs sachent qui a photographié.', org: 'Julie' },
-    autre: { label: 'Autre événement', album: "Album de l'événement", seenBy: 'Les organisateurs verront qui a pris des photos.', nameNeeded: 'Indiquez votre prénom pour que les organisateurs sachent qui a photographié.', org: 'Association Les Amis' },
+    mariage: { label: 'Mariage', album: 'Album des mariés', seenBy: 'Les mariés verront qui a pris des photos.', nameNeeded: 'Indiquez un pseudo pour que les mariés sachent qui a photographié.', org: 'Léa et Tom' },
+    bapteme: { label: 'Baptême', album: 'Album du baptême', seenBy: 'La famille verra qui a pris des photos.', nameNeeded: 'Indiquez un pseudo pour que la famille sache qui a photographié.', org: 'Sophie et Marc' },
+    anniversaire: { label: 'Anniversaire', album: "Album d'anniversaire", seenBy: 'Les organisateurs verront qui a pris des photos.', nameNeeded: 'Indiquez un pseudo pour que les organisateurs sachent qui a photographié.', org: 'Julie' },
+    autre: { label: 'Autre événement', album: "Album de l'événement", seenBy: 'Les organisateurs verront qui a pris des photos.', nameNeeded: 'Indiquez un pseudo pour que les organisateurs sachent qui a photographié.', org: 'Association Les Amis' },
   };
   const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
   const snippet = (s, i) => norm(s).slice(Math.max(0, i - 40), i + 60);
@@ -128,21 +130,22 @@ async (page) => {
       noWedding(type, 'album avant', t, title, null);
       await shot(album, type, 2, 'album-avant', true);
 
-      step(`${++n}. ${type} — Invité : accueil, prénom vide, inscription, 1 photo, « Mes photos »`);
+      step(`${++n}. ${type} — Invité : accueil, pseudo vide, inscription, 1 photo, « Mes photos »`);
       await guest.goto(guestUrl);
       await guest.getByRole('heading', { name: 'Connecté !' }).waitFor();
       t = await bodyText(guest);
       has(type, 'invité accueil', t, K.album);
       has(type, 'invité accueil', t, K.seenBy);
+      has(type, 'invité accueil', t, INVITE_PSEUDO);
       noWedding(type, 'invité accueil', t, title, null);
       const docTitleG = await guest.title();
       noWedding(type, 'invité accueil (onglet)', docTitleG, title, null);
       await guest.getByRole('button', { name: 'Commencer à photographier' }).click();
       await guest.locator('#name-aide[role="alert"]').waitFor({ timeout: 5000 });
       t = await bodyText(guest);
-      has(type, 'invité prénom vide', t, K.nameNeeded);
-      noWedding(type, 'invité prénom vide', t, title, null);
-      await shot(guest, type, 3, 'invite-prenom-vide', false);
+      has(type, 'invité pseudo vide', t, K.nameNeeded);
+      noWedding(type, 'invité pseudo vide', t, title, null);
+      await shot(guest, type, 3, 'invite-pseudo-vide', false);
       await guest.locator('#name').fill('Camille');
       await guest.getByRole('button', { name: 'Commencer à photographier' }).click();
       await guest.waitForFunction(() => { const b = document.querySelector('button[aria-label="Prendre la photo"]'); return b && !b.disabled; }, null, { timeout: 10000 });

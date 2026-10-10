@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Logo } from "@/components/logo";
 import { api, ApiError, type EventInfo } from "@/lib/api";
-import { kindOf } from "@/lib/kinds";
+import { INVITE_PSEUDO, kindOf } from "@/lib/kinds";
 import { countStored } from "@/lib/photo-store";
 import { uploadQueue, type QueueSnapshot } from "@/lib/upload-queue";
 import { useWakeLock } from "@/lib/wake-lock";
@@ -260,7 +260,7 @@ export function GuestApp() {
     setNameError(null);
     try {
       const result = await api<JoinResult>("join", { code, name, email });
-      if (!result.token) throw new ApiError("name", "Ce prénom n'est pas valide.", 422);
+      if (!result.token) throw new ApiError("name", "Ce pseudo n'est pas valide.", 422);
       saveToken(code, result.token);
       uploadQueue.setToken(result.token);
       // La limite renvoyée tient compte du bonus accordé pour l'e-mail.
@@ -411,18 +411,19 @@ export function GuestApp() {
           <h1 className="font-serif text-5xl font-semibold leading-[1.1]">Connecté !</h1>
           <p className="libelle text-or-fonce">{kindOf(event.kind).album}</p>
           <p className="font-serif text-2xl italic">{event.title}</p>
+          <p className="text-sm text-sapin-700">{kindOf(event.kind).seenBy}</p>
         </div>
 
         <form onSubmit={join} className="flex w-full max-w-sm flex-col gap-2">
           <label htmlFor="name" className="libelle text-sapin-700">
-            Votre prénom
+            Votre pseudo
           </label>
           <input
             id="name"
             name="name"
             type="text"
             maxLength={40}
-            autoComplete="given-name"
+            autoComplete="nickname"
             aria-invalid={Boolean(nameError)}
             aria-describedby="name-aide"
             className="h-13 rounded-full border border-sapin-700/40 bg-white/60 px-6 text-base text-sapin-900 focus:border-sapin-900 focus:outline-none"
@@ -432,7 +433,7 @@ export function GuestApp() {
             role={nameError ? "alert" : undefined}
             className={`text-sm ${nameError ? "text-[#a3312c]" : "text-sapin-700"}`}
           >
-            {nameError ?? kindOf(event.kind).seenBy}
+            {nameError ?? INVITE_PSEUDO}
           </p>
           <label htmlFor="email" className="libelle mt-3 text-sapin-700">
             Votre e-mail (facultatif)

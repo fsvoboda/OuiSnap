@@ -24,7 +24,7 @@ Du formulaire de demande de la vitrine jusqu'à la suppression d'un album, pour 
 | Événement | Ce que Franck crée dans l'administration : un mariage, un baptême, un anniversaire ou un autre événement, avec ses dates et ses limites. |
 | Album | Ensemble des photos d'un événement. Chaque événement a un album. |
 | Organisateurs | Les personnes qui reçoivent l'album : mariés, famille, hôtes. Elles sont désignées par un nom et une adresse e-mail à la création de l'événement. |
-| Invité / photographe | Personne qui rejoint l'album en scannant le QR code. Elle est identifiée par son prénom, sans compte. |
+| Invité / photographe | Personne qui rejoint l'album en scannant le QR code. Elle est identifiée par le pseudo qu'elle choisit, sans compte. |
 | Code | Code de 8 caractères propre à l'événement, contenu dans le QR code (admin-event-save.php). |
 | Lien privé | Adresse de l'album des organisateurs, avec une clé secrète : `/album/?k=…`. Qui l'a voit toutes les photos après la révélation. |
 | Lien personnel | Adresse envoyée par e-mail à l'invité qui a laissé son adresse : elle rouvre sa session sur n'importe quel appareil. |
@@ -202,7 +202,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 - RG-103 : l'image du QR code des organisateurs, y compris téléchargée, porte un bandeau sapin « ALBUM PRIVÉ » au-dessus du code, pour ne pas passer pour celle des invités (card-kit.ts : `imageQr`, event-links.tsx).
 - RG-104 : les noms de fichier utilisent le code de l'événement, jamais la clé de l'album : un nom de fichier se voit dans un aperçu ou un dossier partagé (organizer-card.ts, event-links.tsx).
 - RG-132 : le PDF des tables compte deux pages : les quatre recto (RG-96, RG-97), puis les quatre dos, aux mêmes places, à imprimer en recto-verso. Les quatre cartes d'une feuille étant identiques, le dos de chaque carte tombe derrière elle sans miroir ni rotation. C'est exact pour une imprimante qui retourne la feuille sur le bord long, le réglage courant ; le bord court n'est pas géré et n'a pas d'option dans l'administration (table-card.ts : `downloadTablePdf`, card-kit.ts : `enregistrerPdf`).
-- RG-133 : contenu du dos d'une carte de table, de haut en bas : le slogan « La fête, vue par vous. » et la signature OuiSnap ; le mode d'emploi en trois étapes numérotées (1. ouvrir l'appareil photo du téléphone et viser le code du recto ; 2. toucher le lien qui s'affiche et donner son prénom ; 3. photographier la fête, les photos rejoignent l'album) ; « Rien à installer · Aucun compte · Un prénom suffit » ; un filet orné d'un petit motif du type de l'événement (deux alliances, goutte, bougie, mire) ; un paragraphe qui présente OuiSnap et dit qui découvrira l'album (les mariés, la famille ou les organisateurs, selon le type) ; « Ce que vous ne photographiez pas, personne ne le verra. » ; en pied, un petit QR code et « Le photographe de votre événement » avec « pourunouieternel.fr ». Le dos est commun aux quatre types, à deux détails près : le motif du filet et le paragraphe. Il n'emploie que le sapin et l'or, et reste lisible en noir et blanc. Texte à plus de 15 mm des bords latéraux de la carte (table-card.ts : `drawTableBack`).
+- RG-133 : contenu du dos d'une carte de table, de haut en bas : le slogan « La fête, vue par vous. » et la signature OuiSnap ; le mode d'emploi en trois étapes numérotées (1. ouvrir l'appareil photo du téléphone et viser le code du recto ; 2. toucher le lien qui s'affiche et choisir un pseudo ; 3. photographier la fête, les photos rejoignent l'album) ; « Rien à installer · Aucun compte · Un pseudo suffit » ; un filet orné d'un petit motif du type de l'événement (deux alliances, goutte, bougie, mire) ; un paragraphe qui présente OuiSnap et dit qui découvrira l'album (les mariés, la famille ou les organisateurs, selon le type) ; « Ce que vous ne photographiez pas, personne ne le verra. » ; en pied, un petit QR code et « Le photographe de votre événement » avec « pourunouieternel.fr ». Le dos est commun aux quatre types, à deux détails près : le motif du filet et le paragraphe. Il n'emploie que le sapin et l'or, et reste lisible en noir et blanc. Texte à plus de 15 mm des bords latéraux de la carte (table-card.ts : `drawTableBack`).
 - RG-134 : le petit QR code du dos ouvre le site du photographe (`pourunouieternel.fr`), pas l'album. Il n'a ni plaque ni cartouche « OuiSnap » (RG-102), pour ne pas passer pour le code de l'album ; il fait environ 19,6 mm et sa correction d'erreurs est de niveau Q. Les traits de coupe ne sont tracés que sur la page des recto : une imprimante recto-verso décale le dos de 2 à 3 mm, et des pointillés tracés sur les dos tomberaient à l'intérieur de la carte finie (card-kit.ts : `petitQr`, `enregistrerPdf`).
 
 **Exceptions**
@@ -227,7 +227,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 1. L'écran affiche « Connexion à l'album ».
 2. Si le téléphone a déjà un jeton de session pour ce code (ou si l'invité arrive par son lien personnel), il est reconnu et passe directement à l'appareil photo (P5).
 3. Sinon l'écran « Connecté ! » apparaît, avec le type d'album et le nom de l'événement.
-4. L'invité saisit « Votre prénom » (obligatoire, aide : « Les mariés verront qui a pris des photos. » selon le type) et, s'il le souhaite, « Votre e-mail (facultatif) ».
+4. L'invité saisit « Votre pseudo » (obligatoire, aide sous le champ : « Prénom, surnom, ce que vous voulez : c'est ce que verront les mariés. » selon le type) et, s'il le souhaite, « Votre e-mail (facultatif) ». L'écran d'accueil porte en plus « Les mariés verront qui a pris des photos. », selon le type.
 5. L'écran indique la limite : « Vous pouvez envoyer jusqu'à N photos, ou N+5 avec votre e-mail. » et, pour l'e-mail, « 5 photos supplémentaires offertes si vous laissez votre e-mail. Vous serez aussi prévenu quand l'album sera dévoilé. »
 6. Il accepte implicitement les règles d'utilisation et la politique de confidentialité (liens sous le bouton) et clique sur « Commencer à photographier ».
 7. Le serveur crée l'invité, donne à son téléphone un jeton secret, et l'appareil photo s'ouvre.
@@ -235,7 +235,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 
 **Règles de gestion**
 
-- RG-20 : le prénom est obligatoire ; espaces multiples réduits, caractères de contrôle retirés, 40 caractères au plus (join.php).
+- RG-20 : le pseudo est obligatoire ; espaces multiples réduits, caractères de contrôle retirés, 40 caractères au plus (join.php).
 - RG-21 : l'e-mail est facultatif ; s'il est donné, il doit être valide, 254 caractères au plus (join.php).
 - RG-22 : le bonus e-mail est de 5 photos, accordé seulement si l'album est limité en photos par photographe (lib.php : `EMAIL_BONUS`, `guest_max_photos`).
 - RG-23 : un nouvel invité n'est accepté que si l'album est ouvert (ni à venir, ni révélé, ni clôturé) (join.php, lib.php : `require_open`).
@@ -253,7 +253,7 @@ Les transitions sont déterminées par l'heure : personne ne « passe » un albu
 | Album pas encore ouvert | « L'album n'est pas encore ouvert. Rendez-vous <jour> à <heure>. » et un bouton « Réessayer » |
 | Album révélé, invité inconnu | « L'album a été dévoilé. Il n'accepte plus de nouvelles photos. » |
 | Album clôturé | « Cet album est clôturé : il n'est plus accessible. » |
-| Prénom vide | « Indiquez votre prénom pour que les mariés sachent qui a photographié. » (selon le type) |
+| Pseudo vide | « Indiquez un pseudo pour que les mariés sachent qui a photographié. » (selon le type) |
 | E-mail invalide | « Cette adresse e-mail ne semble pas valide. » |
 | Album complet | « Cet album est complet : le nombre maximum de photographes est atteint. » |
 | Service indisponible | « Le service est momentanément indisponible. » avec « Réessayer » |
@@ -379,7 +379,7 @@ Un message ponctuel (limite atteinte, par exemple) prend le pas sur cette ligne.
 1. L'écran « Ouverture de l'album » s'affiche, puis la page de l'album : type d'album, nom.
 2. Un encadré annonce « Votre album se dévoile <jour> à <heure> » (heure de Paris) avec un compte à rebours en jours, heures, minutes, secondes, et « D'ici là, les photos restent une surprise. Vous pouvez seulement voir qui photographie. »
 3. Le QR code des invités est affiché, à toucher pour le plein écran.
-4. Le total de photos reçues et le nombre d'invités s'affichent, puis la liste « prénom, nombre de photos ».
+4. Le total de photos reçues et le nombre d'invités s'affichent, puis la liste « pseudo, nombre de photos ».
 5. Sans photo : « Aucune photo pour l'instant. Les premières arriveront dès que vos invités scanneront le QR code. »
 6. La page se rafraîchit seule toutes les 30 secondes (album-app.tsx).
 7. Quand la suppression de l'album est à moins de trente jours, une ligne s'ajoute sous les compteurs (RG-127).
@@ -388,7 +388,7 @@ Un message ponctuel (limite atteinte, par exemple) prend le pas sur cette ligne.
 **Règles de gestion**
 
 - RG-39 : avant la révélation, aucune information sur les photos ne sort du serveur, hormis le nombre par invité (album.php).
-- RG-40 : seuls les invités ayant envoyé au moins une photo figurent dans la liste ; ordre par nombre de photos décroissant puis par prénom (album.php).
+- RG-40 : seuls les invités ayant envoyé au moins une photo figurent dans la liste ; ordre par nombre de photos décroissant puis par pseudo (album.php).
 - RG-41 : une coupure réseau passagère garde l'affichage en place ; le prochain rafraîchissement réessaie (album-app.tsx).
 
 **Exceptions.** Lien non reconnu : « Ce lien d'album n'est pas valide. ». Album clôturé : « Cet album est clôturé : il n'est plus accessible. » Événement sans date de révélation (anciens événements) : l'encadré affiche « La date de révélation de votre album n'est pas encore fixée. » à la place de la date et du compte à rebours (album-app.tsx).
@@ -428,7 +428,7 @@ Un message ponctuel (limite atteinte, par exemple) prend le pas sur cette ligne.
 **Étapes**
 
 1. La page affiche le total (« N photos, N invités ») et le bouton « Tout télécharger ».
-2. Les photos sont rangées par invité (ordre alphabétique des prénoms), chacune dans sa section avec son nombre de photos, puis dans l'ordre de prise de vue.
+2. Les photos sont rangées par invité (ordre alphabétique des pseudos), chacune dans sa section avec son nombre de photos, puis dans l'ordre de prise de vue.
 3. Les organisateurs touchent une photo : elle s'agrandit avec zoom, flèches précédente et suivante, et le rang « N sur total ». Un balayage vers la gauche ou la droite passe aussi à la photo suivante ou précédente, tant que la photo n'est pas zoomée. Un double appui, ou un double clic, ramène la photo à son zoom initial (photo-view.tsx).
 4. Le bouton cœur ajoute ou retire un coup de cœur (« Ajouter un coup de cœur » / « Retirer le coup de cœur ») ; le cœur s'affiche tout de suite et revient en arrière si le serveur refuse.
 5. « Tout télécharger » télécharge `album-<nom de l'album>.zip`. Il contient un dossier par photographe, avec des photos numérotées dans l'ordre de prise de vue (`001.jpg`, `002.jpg`…). Les photos arrivées après la révélation sont à la fin de leur dossier.
@@ -437,7 +437,7 @@ Un message ponctuel (limite atteinte, par exemple) prend le pas sur cette ligne.
 **Règles de gestion**
 
 - RG-45 : les photos ne sont servies qu'après la révélation (album-photo.php, album-like.php, album-zip.php).
-- RG-46 : deux photographes de même prénom reçoivent « Camille » et « Camille-2 » comme noms de dossier ; les accents et caractères spéciaux sont retirés des noms de dossier et de fichier (album-zip.php).
+- RG-46 : le dossier d'un invité porte son pseudo ; deux pseudos identiques reçoivent « Camille » et « Camille-2 » comme noms de dossier ; les accents et caractères spéciaux sont retirés des noms de dossier et de fichier (album-zip.php).
 - RG-47 : l'archive est écrite au fil de l'eau, sans fichier temporaire ; elle est limitée à 4 Go et 65 535 photos (format ZIP classique) ; sa taille n'est annoncée au navigateur que sous 150 Mo (album-zip.php). Un essai du 3 octobre 2026 sur le serveur : 1 000 photos (651 Mo) en 64 secondes (README précédent).
 - RG-48 : le coup de cœur est vu par l'organisateur, par le photographe sur « Mes photos », et par l'administrateur (my-photos.tsx, album-view.tsx).
 - RG-49 : les organisateurs ne peuvent ni supprimer ni ajouter de photo.
@@ -699,16 +699,16 @@ Textes de la carte des organisateurs, par type (organizer-card.ts) :
 | Anniversaire | POUR LES ORGANISATEURS | « Scannez pour ouvrir votre album » |
 | Autre | POUR LES ORGANISATEURS | « Scannez pour ouvrir votre album » |
 
-- RG-75 : le message qui demande le prénom suit la même logique : « Indiquez votre prénom pour que <les mariés | la famille | les organisateurs> sachent qui a photographié. » (kinds.ts).
+- RG-75 : les deux textes du champ « Votre pseudo » suivent la même logique : l'aide « Prénom, surnom, ce que vous voulez : c'est ce que <verront les mariés | verra la famille | verront les organisateurs>. » et, si le champ est vide, « Indiquez un pseudo pour que <les mariés | la famille | les organisateurs> sachent qui a photographié. » (kinds.ts : `nameHint`, `nameNeeded`).
 - RG-76 : les e-mails ont des titres et phrases propres au mariage (« Votre album de mariage est ouvert », « Revivez votre mariage à travers le regard de vos invités. »), au baptême (« L'album du baptême est ouvert », « Revivez ce baptême à travers le regard de vos proches. ») et à l'anniversaire (« L'album d'anniversaire est ouvert », « Revivez cet anniversaire à travers le regard de vos invités. »). Le type « Autre » reste neutre (« Votre album est ouvert », « Votre album est dévoilé ») (mail.php).
 - RG-77 : un type inconnu est traité comme « Autre » (kinds.ts, mail.php).
 
 ### 5.2 Confidentialité et conservation des données
 
-- RG-78 : données des invités : prénom, photos, adresse e-mail facultative. L'adresse n'est jamais montrée aux organisateurs ni aux autres invités (politique de confidentialité).
+- RG-78 : données des invités : pseudo choisi par l'invité, photos, adresse e-mail facultative. L'adresse n'est jamais montrée aux organisateurs ni aux autres invités (politique de confidentialité).
 - RG-79 : données des organisateurs : nom et adresse e-mail, pour leur écrire (ouverture, révélation, préavis de suppression).
 - RG-80 : données du formulaire : nom, e-mail, type et date, message ; conservées trois ans après leur réception (politique de confidentialité). La tâche planifiée les supprime à cette échéance (RG-128). La date de réception est la seule date connue : un échange ultérieur par e-mail ne la prolonge pas.
-- RG-81 : photos, prénoms et e-mails d'un événement : conservés jusqu'à la suppression de l'album, qui est automatique six mois après la clôture, les organisateurs étant prévenus trente jours avant (politique de confidentialité ; RG-55, RG-117 à RG-125). L'administrateur peut aussi supprimer un album à la main à tout moment.
+- RG-81 : photos, pseudos et e-mails d'un événement : conservés jusqu'à la suppression de l'album, qui est automatique six mois après la clôture, les organisateurs étant prévenus trente jours avant (politique de confidentialité ; RG-55, RG-117 à RG-125). L'administrateur peut aussi supprimer un album à la main à tout moment.
 - RG-82 : hébergement en France (OVH). Aucun cookie de publicité ou de mesure d'audience. Un identifiant de session est gardé dans le navigateur de l'invité ; un cookie de session sert à l'administrateur (politique de confidentialité).
 - RG-83 : seule la page vitrine est ouverte aux moteurs de recherche ; l'API, l'administration, l'album, la page invité et le QR plein écran sont exclus (robots.txt).
 - RG-84 : les clés des liens privés ne sont pas transmises à d'autres sites par le navigateur (Referrer-Policy) et les photos ne sont jamais accessibles par une adresse directe (README précédent, lib.php).
@@ -723,7 +723,7 @@ Textes de la carte des organisateurs, par type (organizer-card.ts) :
 | Bonus e-mail | 5 photos (si l'album est limité) | lib.php |
 | Nom de l'album | 120 caractères | admin-event-save.php |
 | Nom des organisateurs | 80 caractères | admin-event-save.php |
-| Prénom d'un invité | 40 caractères | join.php |
+| Pseudo d'un invité | 40 caractères | join.php |
 | E-mail | 254 caractères | join.php, contact.php, admin-event-save.php |
 | Nom du demandeur (vitrine) | 80 caractères | contact.php |
 | Message de la vitrine | 2 000 caractères | contact.php |

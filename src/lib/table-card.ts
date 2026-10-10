@@ -273,13 +273,13 @@ const SLOGAN = ["La fête,", "vue par vous."];
 // sens inchangé : chaque étape tient ainsi sur deux lignes au corps 40, le plancher d'une consigne.
 const ETAPES = [
   "Ouvrez l’appareil photo de votre téléphone, visez le code au recto.",
-  "Touchez le lien qui s’affiche à l’écran, puis donnez votre prénom.",
+  "Touchez le lien qui s’affiche à l’écran, puis choisissez un pseudo.",
   "Photographiez la fête : vos photos rejoignent l’album.",
 ];
 
 // Posée juste sous la troisième étape, là où naît le doute. Points médians : elle se lit en trois
 // coups d'œil au lieu d'une phrase.
-const REASSURANCE = "Rien à installer · Aucun compte · Un prénom suffit";
+const REASSURANCE = "Rien à installer · Aucun compte · Un pseudo suffit";
 
 // La seule phrase de la carte qui crée une urgence, et elle arrive après l'explication, jamais avant.
 const FINALE = ["Ce que vous ne photographiez pas,", "personne ne le verra."];

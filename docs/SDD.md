@@ -274,7 +274,7 @@ Chaque page est un dossier de [`../src/app/`](../src/app/). Les paramètres sont
 L'invité n'a pas de compte. Il est reconnu par un jeton.
 
 1. À l'ouverture de `/e/?c=CODE`, `GuestApp` appelle `join` avec le code, et le jeton s'il en a un.
-2. Sans jeton reconnu, l'écran « Connecté ! » demande le prénom (et l'e-mail, facultatif). `join` crée l'invité et renvoie un jeton de 48 caractères hexadécimaux.
+2. Sans jeton reconnu, l'écran « Connecté ! » demande un pseudo (et l'e-mail, facultatif). `join` crée l'invité et renvoie un jeton de 48 caractères hexadécimaux.
 3. Le jeton est gardé dans le `localStorage` du navigateur, sous la clé `ouisnap:invite:<CODE>`. S'il rescanne le QR code avec le même navigateur, l'invité retrouve sa session.
 4. Si le `localStorage` est indisponible (navigation privée), la session dure le temps de la page.
    Chaque photo en attente garde dans sa fiche le jeton de l'invité au moment de la prise : un renvoi part avec le même invité, ce qui garde l'anti-doublon cohérent. Si le serveur ne reconnaît plus l'invité (`session` confirmé), `GuestApp` appelle `forgetToken(code)` et revient à l'écran « Connecté ! ».
@@ -794,12 +794,12 @@ Dix tables en production : neuf créées par les migrations, plus `migrations`, 
 | `id` | INT, clé primaire | Identifiant |
 | `event_id` | INT, clé étrangère vers `events`, suppression en cascade | Événement |
 | `token_hash` | CHAR(64), unique | SHA-256 du jeton gardé sur le téléphone |
-| `name` | VARCHAR(40) | Prénom saisi |
+| `name` | VARCHAR(40) | Pseudo saisi par l'invité (libellé « Votre pseudo » ; la colonne garde son nom) |
 | `email` | VARCHAR(254), nul possible | E-mail facultatif |
 | `link_token` | CHAR(48), nul possible | Jeton en clair, gardé seulement si un e-mail a été donné : il sert au lien personnel du message de révélation |
 | `created_at` | TIMESTAMP | Inscription |
 
-Le même prénom peut exister plusieurs fois dans un événement.
+Le même pseudo peut exister plusieurs fois dans un événement.
 
 #### `photos` — une photo
 
@@ -954,7 +954,7 @@ Seule exception : le QR code (`qr.php`), public, parce qu'il doit s'afficher dan
 
 ### 8.4 Archive ZIP
 
-`album-zip.php` écrit l'archive au fil de l'eau : pas de fichier temporaire, une seule photo en mémoire à la fois. Les JPEG sont rangés sans compression. Un dossier par invité (prénom sans accents ; `Camille`, `Camille-2` en cas d'homonymes), photos numérotées `001.jpg`, `002.jpg`… dans l'ordre de prise de vue.
+`album-zip.php` écrit l'archive au fil de l'eau : pas de fichier temporaire, une seule photo en mémoire à la fois. Les JPEG sont rangés sans compression. Un dossier par invité (pseudo sans accents ; `Camille`, `Camille-2` en cas de pseudos identiques), photos numérotées `001.jpg`, `002.jpg`… dans l'ordre de prise de vue.
 
 - Limite du format : 4 Go et 65 535 fichiers par archive (413 `size` au-delà).
 - La taille n'est annoncée au navigateur (`Content-Length`) qu'en dessous de 150 Mo : l'hébergement refuse les réponses qui annoncent une très grosse taille (erreur 500 constatée à 620 Mo, aucun souci à 195 Mo, d'après le commentaire du code).
@@ -1223,7 +1223,7 @@ Si la table `settings` manque, `admin_password()` échoue et **toute connexion e
 | Demandeur | Avant la révélation | Après |
 |---|---|---|
 | Invité | Ses propres photos, et rien d'autre | Ses propres photos, avec les coups de cœur reçus |
-| Organisateurs | Nom, nature, code, date de révélation, total, et par invité : prénom et nombre de photos | La liste des photos, les images, le ZIP |
+| Organisateurs | Nom, nature, code, date de révélation, total, et par invité : pseudo et nombre de photos | La liste des photos, les images, le ZIP |
 | Administrateur | Tout, à tout moment | Tout |
 
 `album.php` n'ajoute le champ `photos` à sa réponse que si l'album est dévoilé. `album-photo.php`, `album-like.php` et `album-zip.php` répondent 403 `locked` avant. Le contrôle est fait par le serveur : masquer un écran ne suffirait pas.
@@ -1543,7 +1543,7 @@ Ils ne se lancent pas par une commande npm : ils sont joués par un agent, à tr
 |---|---|---|
 | `mariage` | `scripts/e2e-mariage.js` | 11 étapes. L'administrateur crée un mariage ; les mariés ouvrent l'album avant la révélation ; un invité s'inscrit et prend 5 photos ; les mariés voient les compteurs mais pas les photos ; l'administrateur supprime la photo 2 ; il avance la révélation ; les mariés découvrent l'album et posent 3 coups de cœur ; l'administrateur les voit ; l'invité retrouve ses 4 photos dans l'ordre, en lecture seule, avec les coups de cœur. |
 | `mot-de-passe` | `scripts/e2e-mot-de-passe.js` | 10 étapes. Session ouverte avec le mot de passe actuel ; demande du lien ; contrôle de l'e-mail HTML ; ouverture du lien ; saisies refusées sans consommer le lien ; nouveau mot de passe ; ancien mot de passe et ancienne session refusés ; connexion avec le nouveau ; lien à usage unique et lien mal formé ; plafond de demandes. |
-| `types` | `scripts/e2e-types.js` | 7 étapes pour chacune des 4 natures d'événement. Création ; album avant la révélation ; page invité (accueil, prénom vide, inscription, une photo, « Mes photos ») ; QR code plein écran ; révélation avancée ; album après la révélation ; album vide après suppression de la photo. Vérifie que les textes s'adaptent à la nature. |
+| `types` | `scripts/e2e-types.js` | 7 étapes pour chacune des 4 natures d'événement. Création ; album avant la révélation ; page invité (accueil, pseudo vide, inscription, une photo, « Mes photos ») ; QR code plein écran ; révélation avancée ; album après la révélation ; album vide après suppression de la photo. Vérifie que les textes s'adaptent à la nature. |
 | `reprise` | `scripts/e2e-reprise.js` | 11 étapes (68 contrôles), titre d'événement « Test reprise E2E <6 chiffres> » (type « autre », limite de 8 photos). L'administrateur crée l'événement ; l'invité s'inscrit et envoie 1 photo en ligne (compteur 1, IndexedDB vide) ; réseau coupé, 3 photos gardées (« Réseau indisponible », « 4 / 8 photos », 3 fiches) ; page fermée, réseau rétabli, nouvelle page : pas d'écran « Connecté ! », « 3 photos retrouvées », envois dans l'ordre des `seq`, IndexedDB vide ; envoi coupé, 1 photo, rechargement, photo retrouvée et envoyée ; réponse perdue (`route.fetch()` puis `route.abort()`) : second envoi avec `duplicate: true` et le même `id`, pas de photo en double ; navigateur sans stockage (`indexedDB` neutralisé) : message « ne fermez pas cette page » puis envoi ; limite atteinte pendant une coupure ; depuis la page admin, renvoi d'un identifiant connu (200 `duplicate` malgré la limite atteinte) puis identifiant mal formé (400) ; album dévoilé avant l'envoi : l'étape 10 vérifie que les 2 photos en attente partent quand même (200, `state: "closed"`), qu'IndexedDB se vide, que l'appareil photo disparaît, que le bandeau « L'album a été dévoilé. Vous ne pouvez plus prendre de nouvelles photos ni en supprimer. » et le message « 2 photos prises avant la révélation ont rejoint l'album. » s'affichent, que la grille passe à 8 vignettes et que le rechargement n'envoie plus rien ; l'étape 11 injecte dans IndexedDB une fiche `failed / closed` telle que l'ancienne version la laissait (elle repart et est acceptée), puis, par envois directs depuis la page admin, vérifie qu'une photo prise il y a 2 h est acceptée, qu'une date dans le futur et une page sans date sont refusées (403 `closed`), et que le quota s'applique aux photos tardives (409 `limit`), sans photo ajoutée par les refus ni envoi en boucle au rechargement. |
 
 ### 14.3 Comment ils se jouent

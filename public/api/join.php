@@ -38,7 +38,7 @@ if (is_token($token)) {
     }
 }
 
-// Prénom nettoyé : les mariés verront qui a posté, et combien.
+// Pseudo nettoyé : les mariés verront qui a posté, et combien.
 $name = preg_replace('/[\x00-\x1F\x7F]+/u', '', (string) ($_POST['name'] ?? '')) ?? '';
 $name = mb_substr(trim(preg_replace('/\s+/u', ' ', $name) ?? ''), 0, 40);
 if ($name === '') {

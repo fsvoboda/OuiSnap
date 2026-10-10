@@ -22,7 +22,9 @@ export default function Confidentialite() {
         </p>
         <ul>
           <li>
-            Votre prénom, pour que les organisateurs sachent qui a pris quelles photos.
+            Le pseudo que vous choisissez, pour que les organisateurs sachent qui a pris quelles
+            photos. Vous êtes libre de son contenu : un prénom, un surnom, ce que vous voulez. Rien
+            ne vous oblige à donner votre véritable identité, et nous ne la vérifions pas.
           </li>
           <li>
             Les photos que vous envoyez, avec leur date d&apos;envoi, pour constituer l&apos;album
@@ -57,7 +59,7 @@ export default function Confidentialite() {
       <Section titre="Bases légales">
         <ul>
           <li>
-            Prénom et photos des invités : intérêt légitime, celui de constituer l&apos;album de
+            Pseudo et photos des invités : intérêt légitime, celui de constituer l&apos;album de
             l&apos;événement à la demande de ses organisateurs.
           </li>
           <li>Adresse e-mail des invités : votre consentement, que vous pouvez retirer à tout moment.</li>
@@ -70,8 +72,8 @@ export default function Confidentialite() {
         <ul>
           <li>
             Les organisateurs de l&apos;événement : pendant l&apos;événement, ils voient seulement
-            les prénoms des invités et le nombre de photos envoyées ; après la révélation de
-            l&apos;album, ils voient les photos et le prénom de leur auteur.
+            les pseudos des invités et le nombre de photos envoyées ; après la révélation de
+            l&apos;album, ils voient les photos et le pseudo de leur auteur.
           </li>
           <li>
             {EDITEUR.nom}, en tant qu&apos;administrateur du service, qui peut consulter et retirer
@@ -89,7 +91,7 @@ export default function Confidentialite() {
       <Section titre="Durées de conservation">
         <ul>
           <li>
-            Photos, prénoms et adresses e-mail liés à un événement : jusqu&apos;à la suppression de
+            Photos, pseudos et adresses e-mail liés à un événement : jusqu&apos;à la suppression de
             l&apos;album. Elle est automatique six mois après sa date de clôture, les organisateurs
             étant prévenus par e-mail trente jours avant ; elle peut être retardée de quelques jours
             pour respecter ce préavis.

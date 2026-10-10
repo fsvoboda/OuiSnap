@@ -80,7 +80,7 @@ const TESTS = [
       return [
         [`types-${kind}-1-admin-evenement.png`, `${label} : admin`],
         [`types-${kind}-2-album-avant.png`, `${label} : album avant révélation`],
-        [`types-${kind}-3-invite-prenom-vide.png`, `${label} : accueil invité`],
+        [`types-${kind}-3-invite-pseudo-vide.png`, `${label} : accueil invité`],
         [`types-${kind}-4-qr-plein-ecran.png`, `${label} : QR code`],
         [`types-${kind}-5-album-vide.png`, `${label} : album révélé vide`],
       ];

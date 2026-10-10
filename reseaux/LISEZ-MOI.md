@@ -8,9 +8,9 @@ Six vues, format 1080 × 1350, dans l'ordre de publication :
 |---|---|---|
 | `insta-1-01-carte.jpg` | La carte posée sur une table dressée | image générée, QR code remplacé par le vrai |
 | `insta-1-02-scan.jpg` | Le téléphone qui vise le code | image générée |
-| `insta-1-03-connecte.jpg` | L'écran « Connecté ! », le prénom qu'on saisit | image générée, adresse du site corrigée |
+| `insta-1-03-connecte.jpg` | L'écran « Connecté ! », le pseudo qu'on saisit | image générée, adresse du site corrigée |
 | `insta-1-04-piste.jpg` | La piste de danse dans l'écran de l'appareil photo | image générée, compteur effacé et logo redessiné |
-| `insta-1-05-promesses.png` | Rien à installer · Aucun compte · Un prénom suffit | fabriquée ici |
+| `insta-1-05-promesses.png` | Rien à installer · Aucun compte · Un pseudo suffit | fabriquée ici |
 | `insta-1-06-slogan.png` | « La fête, vue par vous. » | fabriquée ici |
 
 `graphique-trois-gestes.png` est en réserve : le mode d'emploi en trois étapes,

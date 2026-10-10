@@ -17,7 +17,7 @@ $stmt = db()->prepare(
 );
 $stmt->execute([$event['id']]);
 
-// Un dossier par invité. Deux invités au même prénom reçoivent « Camille » et « Camille-2 ».
+// Un dossier par invité, nommé d'après son pseudo. Deux pseudos identiques donnent « Camille » et « Camille-2 ».
 // Dans chaque dossier, les photos sont numérotées dans l'ordre de prise de vue.
 $folders = [];
 $numbers = [];

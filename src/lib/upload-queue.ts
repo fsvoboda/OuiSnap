@@ -27,7 +27,7 @@ export type QueueEvents = {
   onLimit: (dropped: number) => void; // limite atteinte : photos retirées de la file
   onRevealed: () => void; // le serveur annonce un album dévoilé : plus de nouvelles photos
   onExpired: (lost: number) => void; // album clôturé : les photos en attente sont perdues
-  onSessionLost: () => void; // l'invité n'est plus reconnu : il doit redonner son prénom
+  onSessionLost: () => void; // l'invité n'est plus reconnu : il doit redonner son pseudo
   onGone: (message: string) => void; // l'événement n'existe plus
 };
 
