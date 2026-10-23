@@ -2,3 +2,8 @@
 <FilesMatch "^(config|config\.example|lib|mail|retention)\.php$">
   Require all denied
 </FilesMatch>
+
+# Réglages PHP du dossier : lus par le serveur, jamais servis au navigateur.
+<FilesMatch "^\.user\.ini$">
+  Require all denied
+</FilesMatch>

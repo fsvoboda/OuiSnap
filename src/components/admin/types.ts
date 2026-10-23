@@ -39,6 +39,9 @@ export type AdminStatus = {
   autoDeleteCount?: number;
   retentionLastRun?: string | null; // dernier passage où les suppressions automatiques ont été examinées
   retentionAge?: number | null; // secondes écoulées depuis, à l'horloge du serveur
+  phpVersion?: string | null; // version de PHP servie par l'hébergeur
+  phpFixed?: string | null; // première version de sa branche qui corrige les failles connues ; null si la branche n'en a pas
+  phpOutdated?: boolean; // version en retard, ou branche sans correctif : à changer dans l'espace client OVH
 };
 
 export const inputClass =

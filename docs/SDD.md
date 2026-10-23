@@ -135,7 +135,7 @@ Versions lues dans [`../package.json`](../package.json) et dans `node_modules/` 
 | `qrcode` | `^1.5.4` | 1.5.4 | Génération des QR codes dans le navigateur |
 | `jspdf` | `^4.2.1` | 4.2.1 | PDF des cartes de table et des organisateurs, chargé à la demande |
 | ESLint | `^9` | 9.39.5 | Analyse du code, avec `eslint-config-next` 16.3.8 |
-| PHP | — | — | API. Le code exige PHP 8.1 au minimum (type de retour `never`). Le README d'origine annonce PHP 8.3 chez OVH : à confirmer dans l'espace client. |
+| PHP | — | — | API. Le code exige PHP 8.1 au minimum (type de retour `never`). Le README d'origine annonce PHP 8.3 chez OVH. La version réellement servie n'est plus « à confirmer » : la bulle d'état de l'administration l'affiche, et dit si elle est en retard sur le correctif de sa branche ([6.2](#62-endpoints), RG-135). Elle se change dans l'espace client OVH, jamais depuis le dépôt. |
 | MySQL | — | — | Base de production (moteur InnoDB, `utf8mb4`). Version : à confirmer. |
 
 Extensions PHP utilisées : PDO (`pdo_mysql` en production, `pdo_sqlite` en local), `mbstring`, GD (facultative : sans elle, pas de vignettes, la photo entière est servie à la place).
@@ -592,10 +592,13 @@ Règles de `admin-event-save.php` : nom de l'album obligatoire (120 caractères 
 | `autoDeleteLastAt` | Date de la dernière suppression automatique d'un album ; `null` s'il n'y en a pas eu |
 | `autoDeleteLastTitle` | Titre de l'album supprimé à cette occasion |
 | `autoDeleteCount` | Nombre total d'albums supprimés automatiquement (0 si aucun) |
+| `phpVersion` | Version de PHP servie par l'hébergeur (`PHP_VERSION`) |
+| `phpFixed` | Première version de sa branche qui corrige les failles critiques connues ; `null` si la branche n'a pas de correctif (antérieure à 8.2) ou si elle est postérieure à la liste |
+| `phpOutdated` | Vrai si la version est en retard sur `phpFixed`, ou si la branche est antérieure à 8.2 |
 
 Champs ajoutés à chaque élément de `events` par `admin_event_payload()` : `deleteAt` (date choisie par l'administrateur, `null` si vide), `deletesAt` (date réelle de suppression au plus tôt, `null` sans échéance), `deleteNear` (échéance à moins de trente jours ou dépassée), `deleteWarnedAt` (mise en file du préavis, `null` tant qu'il n'est pas en file), `deleteWarningSentAt` (premier envoi réussi d'un message de préavis, `null` tant que rien n'est parti). La lecture de la file est protégée : sur `PDOException`, comme si rien n'était parti.
 
-Si la lecture échoue (table `mail_queue` absente, par exemple), `admin_status()` note l'erreur dans le journal et renvoie les valeurs lues jusque-là : la liste des événements s'affiche quand même. Le front (`MailStatus` dans `src/components/admin/admin-app.tsx`, type `AdminStatus` dans `types.ts`) affiche le bloc dans la bulle `StatusBubble`, placée à côté du titre « Événements » (le bouton n'est pas rendu sans `status`) ; il traite `status` comme facultatif. La fonction `statusAlerts(status)` décide si le bouton prend l'état d'alerte : `cronAge` nul ou supérieur à deux heures, au moins un e-mail abandonné, ou tâche déjà passée avec `retentionAge` absent ou supérieur à deux heures. Les libellés d'accessibilité du bouton sont « Service : quelque chose demande votre attention. Voir le détail » et « Service : tout va bien. Voir le détail ».
+Si la lecture échoue (table `mail_queue` absente, par exemple), `admin_status()` note l'erreur dans le journal et renvoie les valeurs lues jusque-là : la liste des événements s'affiche quand même. Le front (`MailStatus` dans `src/components/admin/admin-app.tsx`, type `AdminStatus` dans `types.ts`) affiche le bloc dans la bulle `StatusBubble`, placée à côté du titre « Événements » (le bouton n'est pas rendu sans `status`) ; il traite `status` comme facultatif. La fonction `statusAlerts(status)` décide si le bouton prend l'état d'alerte : `cronAge` nul ou supérieur à deux heures, au moins un e-mail abandonné, `phpOutdated` vrai, ou tâche déjà passée avec `retentionAge` absent ou supérieur à deux heures. Les trois champs `php…` viennent de `php_version_state()` (`lib.php`), qui ne lit pas la base : ils restent justes même quand la lecture des réglages échoue. Les libellés d'accessibilité du bouton sont « Service : quelque chose demande votre attention. Voir le détail » et « Service : tout va bien. Voir le détail ».
 
 #### Autres
 
@@ -1230,7 +1233,7 @@ Si la table `settings` manque, `admin_password()` échoue et **toute connexion e
 
 ### 10.5 Protections du dossier `api/` et en-têtes
 
-[`../public/api/.htaccess`](../public/api/.htaccess) interdit l'accès web à `config.php`, `config.example.php`, `lib.php`, `mail.php` et `retention.php` (expression `^(config|config\.example|lib|mail|retention)\.php$`).
+[`../public/api/.htaccess`](../public/api/.htaccess) interdit l'accès web à `config.php`, `config.example.php`, `lib.php`, `mail.php` et `retention.php` (expression `^(config|config\.example|lib|mail|retention)\.php$`), ainsi qu'au fichier de réglages `.user.ini` (expression `^\.user\.ini$`), lu par le serveur et jamais servi au navigateur.
 
 [`../public/.htaccess`](../public/.htaccess) :
 
@@ -1256,7 +1259,11 @@ Ces fichiers ne s'appliquent qu'en production (Apache). En local, `lib.php`, `ma
 
 Les fichiers sont rangés hors du dossier web : même un fichier malveillant ne pourrait pas être exécuté par une adresse.
 
-Les limites d'envoi de PHP chez OVH (`upload_max_filesize`, `post_max_size`) ne sont pas réglées par le dépôt : à confirmer. Une photo réduite à 2560 px reste en pratique très en dessous des 15 Mo.
+Les limites d'envoi de PHP sont réglées par le dépôt, dans [`../public/api/.user.ini`](../public/api/.user.ini) : `upload_max_filesize = 16M`, `post_max_size = 17M`, `max_file_uploads = 2`. Une photo réduite à 2560 px reste en pratique très en dessous des 15 Mo.
+
+C'est bien `.user.ini` et non `php_value` dans `.htaccess` : chez OVH, PHP tourne en CGI/FPM, où `php_value` provoque une erreur 500. Le fichier est relu au plus tard cinq minutes après son dépôt (`user_ini.cache_ttl`), et `api/.htaccess` interdit qu'il soit servi au navigateur.
+
+Les valeurs sont volontairement un peu au-dessus de la limite de l'application (15 Mo, `MAX_BYTES` dans `upload.php`) : ainsi c'est `upload.php` qui refuse une photo trop lourde, avec son message, au lieu de PHP qui viderait `$_FILES` sans explication. Au-delà, plus rien n'entre : moins de données non authentifiées atteignent l'analyse de requête de PHP, ce qui réduit la surface exposée aux failles de ce niveau (CVE-2026-109618 et CVE-2026-109619, octobre 2026, exécution de code à distance sans authentification). Ce n'est qu'une réduction de surface, pas un correctif : le correctif est la version de PHP (8.2.35, 8.3.36, 8.4.27 ou 8.5.12 au minimum), qui se choisit dans l'espace client OVH. Régler `memory_limit` n'est pas fait ici : la valeur de l'hébergeur mutualisé s'impose de toute façon.
 
 ### 10.7 Risques connus et limites
 

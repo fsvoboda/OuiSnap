@@ -40,6 +40,9 @@ function duration(seconds: number) {
 const CRON_WARNING =
   "Les e-mails d'ouverture et de révélation ne partent qu'à la visite du site.";
 
+// L'hébergement est mutualisé : la version de PHP ne se corrige pas depuis le dépôt.
+const PHP_UPDATE_HINT = "Elle se change dans l'espace client OVH.";
+
 // Y a-t-il quelque chose qui demande l'attention de l'administrateur ? Dans ce cas la bulle
 // se signale au lieu de rester discrète : une alerte ne doit pas se cacher derrière un pictogramme.
 function statusAlerts(status: AdminStatus) {
@@ -47,6 +50,7 @@ function statusAlerts(status: AdminStatus) {
     status.cronAge === null ||
     status.cronAge > 2 * 3600 ||
     status.mailsAbandoned > 0 ||
+    status.phpOutdated === true ||
     (status.cronAge !== null &&
       (status.retentionAge === null ||
         status.retentionAge === undefined ||
@@ -54,7 +58,8 @@ function statusAlerts(status: AdminStatus) {
   );
 }
 
-// Passage de la tâche planifiée (attendue chaque heure), e-mails restés en file, suppressions.
+// Passage de la tâche planifiée (attendue chaque heure), e-mails restés en file, suppressions,
+// version de PHP servie par l'hébergeur.
 function MailStatus({ status }: { status: AdminStatus }) {
   const late = status.cronAge === null || status.cronAge > 2 * 3600;
   const plural = (count: number) => (count > 1 ? "s" : "");
@@ -102,6 +107,19 @@ function MailStatus({ status }: { status: AdminStatus }) {
           {formatDay(status.autoDeleteLastAt)}.
         </p>
       )}
+      {status.phpVersion ? (
+        status.phpOutdated ? (
+          <p className="text-[#f0a39e]">
+            PHP {status.phpVersion} :{" "}
+            {status.phpFixed
+              ? `mise à jour attendue, ${status.phpFixed} corrige deux failles critiques.`
+              : "branche sans correctif de sécurité."}{" "}
+            {PHP_UPDATE_HINT}
+          </p>
+        ) : (
+          <p>PHP {status.phpVersion} : à jour.</p>
+        )
+      ) : null}
     </div>
   );
 }

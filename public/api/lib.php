@@ -570,6 +570,41 @@ function save_setting(string $name, string $value): void
 
 // État de l'envoi des e-mails, pour l'administration : dernier passage de la tâche planifiée et file d'attente.
 // cronMode : « cli » (lancée par l'hébergeur) ou « web » (appel de l'adresse de cron.php).
+// Première version de chaque branche de PHP qui corrige les deux failles critiques du 21 octobre
+// 2026 (CVE-2026-109618 et CVE-2026-109619 : exécution de code à distance, sans authentification,
+// avant même que le code de l'API ne tourne). Les branches antérieures à 8.2 n'ont pas de correctif
+// officiel. À compléter quand une nouvelle branche sort.
+const PHP_FIXED_VERSIONS = [
+    '8.2' => '8.2.35',
+    '8.3' => '8.3.36',
+    '8.4' => '8.4.27',
+    '8.5' => '8.5.12',
+];
+
+// Version de PHP servie par l'hébergeur, et retard éventuel. L'hébergement est mutualisé : la
+// version se choisit dans l'espace client OVH, jamais ici. L'administration l'affiche pour que le
+// retard se voie sans ouvrir l'espace client.
+function php_version_state(): array
+{
+    $version = PHP_VERSION;
+    [$major, $minor] = array_pad(explode('.', $version), 2, '0');
+    $fixed = PHP_FIXED_VERSIONS["$major.$minor"] ?? null;
+    if ($fixed === null) {
+        // Branche absente de la liste : soit antérieure à 8.2, et alors sans correctif possible,
+        // soit postérieure à 8.5, donc sortie après ces lignes et déjà corrigée.
+        return [
+            'phpVersion' => $version,
+            'phpFixed' => null,
+            'phpOutdated' => version_compare($version, '8.2', '<'),
+        ];
+    }
+    return [
+        'phpVersion' => $version,
+        'phpFixed' => $fixed,
+        'phpOutdated' => version_compare($version, $fixed, '<'),
+    ];
+}
+
 function admin_status(): array
 {
     $status = [
@@ -577,6 +612,8 @@ function admin_status(): array
         'autoDeleteLastAt' => null, 'autoDeleteLastTitle' => null, 'autoDeleteCount' => 0,
         'retentionLastRun' => null, 'retentionAge' => null,
     ];
+    // Ne dépend pas de la base : reste juste même si la lecture des réglages échoue plus bas.
+    $status += php_version_state();
     try {
         $settings = db()->query(
             "SELECT name, value FROM settings WHERE name IN
